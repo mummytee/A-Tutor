@@ -1,0 +1,157 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated student profile, learning preferences, and persistent AI memory.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID of the student." },
+        "displayName": { "type": "string", "description": "Student display name." },
+        "email": { "type": "string", "description": "Student email address." },
+        "photoUrl": { "type": "string", "description": "Profile avatar URL." },
+        "learningLevel": { "type": "string", "enum": ["Beginner", "Intermediate", "Advanced", "University"] },
+        "learningStyle": { "type": "string", "enum": ["Visual", "Step-by-Step", "Socratic", "Analogy-Rich"] },
+        "dailyGoalMinutes": { "type": "integer", "description": "Target study minutes per day." },
+        "preferredModel": { "type": "string", "description": "Selected Gemini model identifier." },
+        "memoryNotes": { "type": "array", "description": "Persistent AI memory facts about strengths, struggles, and goals." },
+        "focusSubjects": { "type": "array", "description": "Student priority subjects." },
+        "streakDays": { "type": "integer", "description": "Active daily study streak." },
+        "totalMinutesStudied": { "type": "integer", "description": "Cumulative study minutes logged." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp on creation." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp on update." }
+      },
+      "required": ["userId", "displayName", "learningLevel", "learningStyle", "dailyGoalMinutes", "preferredModel", "memoryNotes", "focusSubjects", "streakDays", "totalMinutesStudied", "createdAt", "updatedAt"]
+    },
+    "Conversation": {
+      "title": "Conversation",
+      "description": "AI tutoring conversation session including interactive chalkboard elements.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "subject": { "type": "string" },
+        "topic": { "type": "string" },
+        "boardType": { "type": "string", "enum": ["GENERAL", "FREEHAND", "MATH", "SCIENCE", "MINDMAP", "GRAPH"] },
+        "boardElements": { "type": "array", "description": "List of interactive chalkboard element maps." },
+        "lastMessagePreview": { "type": "string" },
+        "messageCount": { "type": "integer" },
+        "starred": { "type": "boolean" },
+        "archived": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "subject", "topic", "boardType", "boardElements", "lastMessagePreview", "messageCount", "starred", "archived", "createdAt", "updatedAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Individual message inside a tutoring conversation.",
+      "type": "object",
+      "properties": {
+        "role": { "type": "string", "enum": ["user", "model"] },
+        "text": { "type": "string" },
+        "groundingSources": { "type": "array" },
+        "hasBoardAction": { "type": "boolean" },
+        "hasImageAttachment": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["role", "text", "groundingSources", "hasBoardAction", "hasImageAttachment", "createdAt"]
+    },
+    "QuizRecord": {
+      "title": "QuizRecord",
+      "description": "AI-generated interactive quiz and assessment results.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "subject": { "type": "string" },
+        "topic": { "type": "string" },
+        "difficulty": { "type": "string", "enum": ["Easy", "Medium", "Hard"] },
+        "questions": { "type": "array" },
+        "completed": { "type": "boolean" },
+        "score": { "type": "integer" },
+        "correctCount": { "type": "integer" },
+        "totalCount": { "type": "integer" },
+        "conversationId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "subject", "topic", "difficulty", "questions", "completed", "score", "correctCount", "totalCount", "createdAt", "updatedAt"]
+    },
+    "FlashcardDeck": {
+      "title": "FlashcardDeck",
+      "description": "AI-generated flashcard deck with mastery state.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "subject": { "type": "string" },
+        "topic": { "type": "string" },
+        "cards": { "type": "array" },
+        "masteredCount": { "type": "integer" },
+        "conversationId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "subject", "topic", "cards", "masteredCount", "createdAt", "updatedAt"]
+    },
+    "StudyResource": {
+      "title": "StudyResource",
+      "description": "Saved lesson notes, study guides, concept maps, and AI progress reports.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "subject": { "type": "string" },
+        "resourceType": { "type": "string", "enum": ["STUDY_GUIDE", "PROGRESS_REPORT", "LESSON_NOTES", "CONCEPT_MAP", "INFOGRAPHIC"] },
+        "content": { "type": "string" },
+        "summary": { "type": "string" },
+        "conversationId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "subject", "resourceType", "content", "summary", "createdAt", "updatedAt"]
+    },
+    "TopicProgress": {
+      "title": "TopicProgress",
+      "description": "Topic-level lesson completion and mastery tracking.",
+      "type": "object",
+      "properties": {
+        "subject": { "type": "string" },
+        "topicId": { "type": "string" },
+        "topicTitle": { "type": "string" },
+        "masteryPercent": { "type": "integer" },
+        "minutesSpent": { "type": "integer" },
+        "status": { "type": "string", "enum": ["NOT_STARTED", "IN_PROGRESS", "COMPLETED"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["subject", "topicId", "topicTitle", "masteryPercent", "minutesSpent", "status", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Student profile, preferences, and persistent AI memory."
+    },
+    "/users/{userId}/conversations/{chatId}": {
+      "schema": { "$ref": "#/entities/Conversation" },
+      "description": "User tutoring conversations and active chalkboard state."
+    },
+    "/users/{userId}/conversations/{chatId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Messages belonging to a tutoring conversation."
+    },
+    "/users/{userId}/quizzes/{quizId}": {
+      "schema": { "$ref": "#/entities/QuizRecord" },
+      "description": "Generated quizzes and assessment attempts."
+    },
+    "/users/{userId}/flashcards/{deckId}": {
+      "schema": { "$ref": "#/entities/FlashcardDeck" },
+      "description": "Generated flashcard decks."
+    },
+    "/users/{userId}/resources/{resourceId}": {
+      "schema": { "$ref": "#/entities/StudyResource" },
+      "description": "Saved study guides, notes, concept maps, and AI progress reports."
+    },
+    "/users/{userId}/progress/{progressId}": {
+      "schema": { "$ref": "#/entities/TopicProgress" },
+      "description": "Subject and topic progress tracking."
+    }
+  }
+}

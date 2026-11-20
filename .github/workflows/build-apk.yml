@@ -1,0 +1,94 @@
+name: Build A-Tutor APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
+      - name: Ensure Gradle Wrapper
+        run: |
+          if [ ! -f ./gradlew ]; then
+            gradle wrapper --gradle-version 9.3.1
+          fi
+          chmod +x gradlew
+
+      - name: Restore Permanent Keystore
+        run: |
+          if [ -f debug.keystore.base64 ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+          else
+            echo "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" | base64 -d > debug.keystore
+          fi
+          mkdir -p ~/.android
+          cp debug.keystore ~/.android/debug.keystore
+
+      - name: Setup Environment Variables
+        run: |
+          if [ ! -f .env ] && [ -f .env.example ]; then
+            cp .env.example .env
+          fi
+
+      - name: Build Debug APK
+        id: build_apk
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Prepare APK Asset
+        run: |
+          mkdir -p release-assets
+          APK_FILE=$(find app/build/outputs/apk/debug/ -name "*.apk" | head -n 1)
+          if [ -n "$APK_FILE" ]; then
+            cp "$APK_FILE" release-assets/A-Tutor.apk
+            echo "Successfully prepared A-Tutor.apk from $APK_FILE"
+          else
+            echo "Error: No APK found in app/build/outputs/apk/debug/"
+            exit 1
+          fi
+
+      - name: Publish Direct APK to GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: always() && steps.build_apk.outcome == 'success'
+        with:
+          tag_name: latest
+          name: "A-Tutor Latest Build (A-Tutor.apk)"
+          body: |
+            ### A-Tutor Android APK
+            - **Direct Download**: Download `A-Tutor.apk` below directly to your phone.
+            - **Version Code**: `${{ github.run_number }}`
+            - **Commit**: `${{ github.sha }}`
+            - **Build Date**: `${{ github.event.head_commit.timestamp || 'Latest' }}`
+          prerelease: false
+          make_latest: true
+          files: release-assets/A-Tutor.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload APK Artifact (Optional Fallback)
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: A-Tutor
+          path: release-assets/A-Tutor.apk
+          retention-days: 14

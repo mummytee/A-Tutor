@@ -1,0 +1,6 @@
+{
+  "name": "A-Tutor",
+  "description": "An AI-powered interactive learning platform with a conversational AI tutor, interactive chalkboard, live voice learning, rich quizzes & flashcards, and student progress analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

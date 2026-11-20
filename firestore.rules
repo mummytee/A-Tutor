@@ -1,0 +1,344 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    function isValidStringList(arr, maxLen) {
+      return arr is list && arr.size() <= maxLen && (arr.size() == 0 || arr[0] is string);
+    }
+
+    // --- Validation Helpers ---
+
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+             (!('email' in data) || (data.email is string && data.email.size() <= 120)) &&
+             (!('photoUrl' in data) || (data.photoUrl is string && data.photoUrl.size() <= 500)) &&
+             data.learningLevel in ['Beginner', 'Intermediate', 'Advanced', 'University'] &&
+             data.learningStyle in ['Visual', 'Step-by-Step', 'Socratic', 'Analogy-Rich'] &&
+             data.dailyGoalMinutes is int && data.dailyGoalMinutes >= 5 && data.dailyGoalMinutes <= 300 &&
+             data.preferredModel is string && data.preferredModel.size() >= 3 && data.preferredModel.size() <= 80 &&
+             isValidStringList(data.memoryNotes, 30) &&
+             isValidStringList(data.focusSubjects, 15) &&
+             data.streakDays is int && data.streakDays >= 0 && data.streakDays <= 10000 &&
+             data.totalMinutesStudied is int && data.totalMinutesStudied >= 0 && data.totalMinutesStudied <= 1000000 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidConversation(data) {
+      return data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 60 &&
+             data.topic is string && data.topic.size() <= 120 &&
+             data.boardType in ['GENERAL', 'FREEHAND', 'MATH', 'SCIENCE', 'MINDMAP', 'GRAPH'] &&
+             data.boardElements is list && data.boardElements.size() <= 100 &&
+             data.lastMessagePreview is string && data.lastMessagePreview.size() <= 250 &&
+             data.messageCount is int && data.messageCount >= 0 && data.messageCount <= 10000 &&
+             data.starred is bool &&
+             data.archived is bool &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidChatMessage(data) {
+      return data.role in ['user', 'model'] &&
+             data.text is string && data.text.size() <= 32000 &&
+             isValidStringList(data.groundingSources, 15) &&
+             data.hasBoardAction is bool &&
+             data.hasImageAttachment is bool &&
+             isValidTimestamp(data.createdAt);
+    }
+
+    function isValidQuizRecord(data) {
+      return data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 60 &&
+             data.topic is string && data.topic.size() <= 120 &&
+             data.difficulty in ['Easy', 'Medium', 'Hard'] &&
+             data.questions is list && data.questions.size() >= 1 && data.questions.size() <= 30 &&
+             data.completed is bool &&
+             data.score is int && data.score >= 0 && data.score <= 100 &&
+             data.correctCount is int && data.correctCount >= 0 && data.correctCount <= 100 &&
+             data.totalCount is int && data.totalCount >= 1 && data.totalCount <= 100 &&
+             (!('conversationId' in data) || (data.conversationId is string && data.conversationId.size() <= 128)) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidFlashcardDeck(data) {
+      return data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 60 &&
+             data.topic is string && data.topic.size() <= 120 &&
+             data.cards is list && data.cards.size() >= 1 && data.cards.size() <= 50 &&
+             data.masteredCount is int && data.masteredCount >= 0 && data.masteredCount <= 100 &&
+             (!('conversationId' in data) || (data.conversationId is string && data.conversationId.size() <= 128)) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidStudyResource(data) {
+      return data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+             data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 60 &&
+             data.resourceType in ['STUDY_GUIDE', 'PROGRESS_REPORT', 'LESSON_NOTES', 'CONCEPT_MAP', 'INFOGRAPHIC'] &&
+             data.content is string && data.content.size() >= 1 && data.content.size() <= 40000 &&
+             data.summary is string && data.summary.size() <= 400 &&
+             (!('conversationId' in data) || (data.conversationId is string && data.conversationId.size() <= 128)) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidTopicProgress(data) {
+      return data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 60 &&
+             data.topicId is string && data.topicId.size() >= 1 && data.topicId.size() <= 128 &&
+             data.topicTitle is string && data.topicTitle.size() >= 1 && data.topicTitle.size() <= 120 &&
+             data.masteryPercent is int && data.masteryPercent >= 0 && data.masteryPercent <= 100 &&
+             data.minutesSpent is int && data.minutesSpent >= 0 && data.minutesSpent <= 1000 &&
+             data.status in ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED'] &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    // --- Collection Rules ---
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().userId == userId &&
+                       incoming().keys().hasAll([
+                         'userId', 'displayName', 'learningLevel', 'learningStyle',
+                         'dailyGoalMinutes', 'preferredModel', 'memoryNotes',
+                         'focusSubjects', 'streakDays', 'totalMinutesStudied',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'displayName', 'email', 'photoUrl',
+                         'learningLevel', 'learningStyle', 'dailyGoalMinutes',
+                         'preferredModel', 'memoryNotes', 'focusSubjects',
+                         'streakDays', 'totalMinutesStudied', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidUserProfile(incoming());
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       (
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'displayName', 'email', 'photoUrl', 'learningLevel',
+                           'learningStyle', 'dailyGoalMinutes', 'preferredModel',
+                           'focusSubjects', 'updatedAt'
+                         ]) ||
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'memoryNotes', 'updatedAt'
+                         ]) ||
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'streakDays', 'totalMinutesStudied', 'updatedAt'
+                         ])
+                       );
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      // Tutoring Conversations & Active Chalkboard State
+      match /conversations/{chatId} {
+        allow get: if isOwner(userId) && isValidId(chatId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(chatId) &&
+                         incoming().keys().hasAll([
+                           'title', 'subject', 'topic', 'boardType',
+                           'boardElements', 'lastMessagePreview', 'messageCount',
+                           'starred', 'archived', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'title', 'subject', 'topic', 'boardType',
+                           'boardElements', 'lastMessagePreview', 'messageCount',
+                           'starred', 'archived', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidConversation(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(chatId) &&
+                         isValidConversation(incoming()) &&
+                         incoming().createdAt == existing().createdAt &&
+                         (
+                           incoming().diff(existing()).affectedKeys().hasOnly(['title', 'subject', 'topic', 'updatedAt']) ||
+                           incoming().diff(existing()).affectedKeys().hasOnly(['starred', 'archived', 'updatedAt']) ||
+                           incoming().diff(existing()).affectedKeys().hasOnly(['boardType', 'boardElements', 'updatedAt']) ||
+                           incoming().diff(existing()).affectedKeys().hasOnly(['lastMessagePreview', 'messageCount', 'boardType', 'boardElements', 'updatedAt']) ||
+                           incoming().diff(existing()).affectedKeys().hasOnly(['lastMessagePreview', 'messageCount', 'updatedAt'])
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(chatId);
+
+        // Conversation Messages
+        match /messages/{messageId} {
+          allow get: if isOwner(userId) && isValidId(chatId) && isValidId(messageId);
+          allow list: if isOwner(userId) && isValidId(chatId);
+
+          allow create: if isOwner(userId) &&
+                           isValidId(chatId) &&
+                           isValidId(messageId) &&
+                           exists(/databases/$(database)/documents/users/$(userId)/conversations/$(chatId)) &&
+                           incoming().keys().hasAll([
+                             'role', 'text', 'groundingSources',
+                             'hasBoardAction', 'hasImageAttachment', 'createdAt'
+                           ]) &&
+                           incoming().keys().hasOnly([
+                             'role', 'text', 'groundingSources',
+                             'hasBoardAction', 'hasImageAttachment', 'createdAt'
+                           ]) &&
+                           isValidChatMessage(incoming());
+
+          allow update: if false;
+          allow delete: if isOwner(userId) && isValidId(chatId) && isValidId(messageId);
+        }
+      }
+
+      // Quizzes
+      match /quizzes/{quizId} {
+        allow get: if isOwner(userId) && isValidId(quizId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(quizId) &&
+                         incoming().keys().hasAll([
+                           'title', 'subject', 'topic', 'difficulty', 'questions',
+                           'completed', 'score', 'correctCount', 'totalCount',
+                           'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'title', 'subject', 'topic', 'difficulty', 'questions',
+                           'completed', 'score', 'correctCount', 'totalCount',
+                           'conversationId', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidQuizRecord(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(quizId) &&
+                         isValidQuizRecord(incoming()) &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'completed', 'score', 'correctCount', 'updatedAt'
+                         ]);
+
+        allow delete: if isOwner(userId) && isValidId(quizId);
+      }
+
+      // Flashcards
+      match /flashcards/{deckId} {
+        allow get: if isOwner(userId) && isValidId(deckId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(deckId) &&
+                         incoming().keys().hasAll([
+                           'title', 'subject', 'topic', 'cards',
+                           'masteredCount', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'title', 'subject', 'topic', 'cards',
+                           'masteredCount', 'conversationId', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidFlashcardDeck(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(deckId) &&
+                         isValidFlashcardDeck(incoming()) &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'cards', 'masteredCount', 'updatedAt'
+                         ]);
+
+        allow delete: if isOwner(userId) && isValidId(deckId);
+      }
+
+      // Saved Resources (Notes, Guides, Reports)
+      match /resources/{resourceId} {
+        allow get: if isOwner(userId) && isValidId(resourceId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(resourceId) &&
+                         incoming().keys().hasAll([
+                           'title', 'subject', 'resourceType', 'content',
+                           'summary', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'title', 'subject', 'resourceType', 'content',
+                           'summary', 'conversationId', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidStudyResource(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(resourceId) &&
+                         isValidStudyResource(incoming()) &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'title', 'content', 'summary', 'updatedAt'
+                         ]);
+
+        allow delete: if isOwner(userId) && isValidId(resourceId);
+      }
+
+      // Topic Progress
+      match /progress/{progressId} {
+        allow get: if isOwner(userId) && isValidId(progressId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(progressId) &&
+                         incoming().keys().hasAll([
+                           'subject', 'topicId', 'topicTitle', 'masteryPercent',
+                           'minutesSpent', 'status', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'subject', 'topicId', 'topicTitle', 'masteryPercent',
+                           'minutesSpent', 'status', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidTopicProgress(incoming());
+
+        allow update: if isOwner(userId) &&
+                         isValidId(progressId) &&
+                         isValidTopicProgress(incoming()) &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'masteryPercent', 'minutesSpent', 'status', 'updatedAt'
+                         ]);
+
+        allow delete: if isOwner(userId) && isValidId(progressId);
+      }
+    }
+  }
+}
