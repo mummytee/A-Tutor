@@ -60,6 +60,7 @@ service cloud.firestore {
              data.topic is string && data.topic.size() <= 120 &&
              data.boardType in ['GENERAL', 'FREEHAND', 'MATH', 'SCIENCE', 'MINDMAP', 'GRAPH'] &&
              data.boardElements is list && data.boardElements.size() <= 100 &&
+             (!('scene3dJson' in data) || (data.scene3dJson is string && data.scene3dJson.size() <= 32000)) &&
              data.lastMessagePreview is string && data.lastMessagePreview.size() <= 250 &&
              data.messageCount is int && data.messageCount >= 0 && data.messageCount <= 10000 &&
              data.starred is bool &&
@@ -183,7 +184,7 @@ service cloud.firestore {
                          ]) &&
                          incoming().keys().hasOnly([
                            'title', 'subject', 'topic', 'boardType',
-                           'boardElements', 'lastMessagePreview', 'messageCount',
+                           'boardElements', 'scene3dJson', 'lastMessagePreview', 'messageCount',
                            'starred', 'archived', 'createdAt', 'updatedAt'
                          ]) &&
                          isValidConversation(incoming());
@@ -196,7 +197,10 @@ service cloud.firestore {
                            incoming().diff(existing()).affectedKeys().hasOnly(['title', 'subject', 'topic', 'updatedAt']) ||
                            incoming().diff(existing()).affectedKeys().hasOnly(['starred', 'archived', 'updatedAt']) ||
                            incoming().diff(existing()).affectedKeys().hasOnly(['boardType', 'boardElements', 'updatedAt']) ||
+                           incoming().diff(existing()).affectedKeys().hasOnly(['scene3dJson', 'updatedAt']) ||
                            incoming().diff(existing()).affectedKeys().hasOnly(['lastMessagePreview', 'messageCount', 'boardType', 'boardElements', 'updatedAt']) ||
+                           incoming().diff(existing()).affectedKeys().hasOnly(['lastMessagePreview', 'messageCount', 'scene3dJson', 'updatedAt']) ||
+                           incoming().diff(existing()).affectedKeys().hasOnly(['lastMessagePreview', 'messageCount', 'boardType', 'boardElements', 'scene3dJson', 'updatedAt']) ||
                            incoming().diff(existing()).affectedKeys().hasOnly(['lastMessagePreview', 'messageCount', 'updatedAt'])
                          );
 

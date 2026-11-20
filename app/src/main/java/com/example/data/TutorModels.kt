@@ -127,6 +127,7 @@ data class Conversation(
     val topic: String = "",
     val boardType: String = BoardType.GENERAL.name,
     val boardElements: List<Map<String, Any?>> = emptyList(),
+    val scene3dJson: String = "",
     val lastMessagePreview: String = "",
     val messageCount: Long = 0L,
     val starred: Boolean = false,
@@ -137,6 +138,7 @@ data class Conversation(
     fun parsedBoardType(): BoardType = BoardType.fromRaw(boardType)
     fun parsedBoardElements(): List<BoardElement> =
         boardElements.map { BoardElement.fromMap(it) }
+    fun parsedScene3D(): Scene3DSpec? = ThreeDPresets.parseOrNull(scene3dJson)
 }
 
 @Keep

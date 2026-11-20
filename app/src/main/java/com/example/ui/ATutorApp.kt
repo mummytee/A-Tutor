@@ -408,6 +408,7 @@ private fun AuthenticatedATutorShell(
                             onSendMessage = viewModel::sendTutorMessage,
                             onToggleGrounding = viewModel::toggleGrounding,
                             onUpdateBoard = viewModel::updateChalkboard,
+                            onUpdateScene3D = viewModel::updateScene3D,
                             onExplainBoard = { bmp -> viewModel.explainChalkboardWithAi(bmp) },
                             onSpeakMessage = viewModel::speakMessage,
                             onStartVoiceRecording = viewModel::startVoiceRecording,

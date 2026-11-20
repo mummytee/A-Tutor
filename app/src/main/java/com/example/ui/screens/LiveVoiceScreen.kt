@@ -200,7 +200,7 @@ fun LiveVoiceScreen(
                             CircularProgressIndicator(color = Color(0xFF5CE0D2))
                             Spacer(Modifier.height(16.dp))
                             Text(
-                                "Connecting to Gemini 3.8 Live Tutor...",
+                                "Connecting to Gemini Live Tutor...",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = Color.White
                             )

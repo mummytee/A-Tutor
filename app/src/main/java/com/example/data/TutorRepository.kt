@@ -241,13 +241,14 @@ class TutorRepository(
         subject: String,
         topic: String,
         boardType: BoardType = BoardType.GENERAL,
-        initialBoardElements: List<BoardElement> = emptyList()
+        initialBoardElements: List<BoardElement> = emptyList(),
+        initialScene3dJson: String = ""
     ): Result<String> {
         val col = userDoc(uid).collection("conversations")
         val docRef = col.document()
         return try {
             requireUserId()
-            val payload = mapOf(
+            val payload = mutableMapOf<String, Any>(
                 "title" to title.ifBlank { "New Tutoring Session" }.take(120),
                 "subject" to subject.ifBlank { "General" }.take(60),
                 "topic" to topic.take(120),
@@ -260,6 +261,9 @@ class TutorRepository(
                 "createdAt" to FieldValue.serverTimestamp(),
                 "updatedAt" to FieldValue.serverTimestamp()
             )
+            if (initialScene3dJson.isNotBlank()) {
+                payload["scene3dJson"] = initialScene3dJson.take(32000)
+            }
             docRef.set(payload).await()
             Result.success(docRef.id)
         } catch (e: CancellationException) {
@@ -347,6 +351,29 @@ class TutorRepository(
         }
     }
 
+    suspend fun updateScene3D(
+        uid: String,
+        chatId: String,
+        scene3dJson: String
+    ): Result<Unit> {
+        val docRef = userDoc(uid).collection("conversations").document(chatId)
+        return try {
+            requireUserId()
+            docRef.update(
+                mapOf(
+                    "scene3dJson" to scene3dJson.take(32000),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, docRef.path)
+            Result.failure(e)
+        }
+    }
+
     suspend fun appendMessageAndBoard(
         uid: String,
         chatId: String,
@@ -356,7 +383,8 @@ class TutorRepository(
         hasBoardAction: Boolean,
         hasImageAttachment: Boolean,
         newBoardType: BoardType? = null,
-        newBoardElements: List<BoardElement>? = null
+        newBoardElements: List<BoardElement>? = null,
+        newScene3dJson: String? = null
     ): Result<Unit> {
         val convRef = userDoc(uid).collection("conversations").document(chatId)
         val msgRef = convRef.collection("messages").document()
@@ -380,6 +408,9 @@ class TutorRepository(
             if (newBoardType != null && newBoardElements != null) {
                 convUpdate["boardType"] = newBoardType.name
                 convUpdate["boardElements"] = newBoardElements.take(100).map { it.toFirestoreMap() }
+            }
+            if (!newScene3dJson.isNullOrBlank()) {
+                convUpdate["scene3dJson"] = newScene3dJson.take(32000)
             }
             convRef.update(convUpdate).await()
             Result.success(Unit)

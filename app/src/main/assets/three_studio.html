@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>A-Tutor 3D Studio</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: #0F2320;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    touch-action: none;
+    user-select: none;
+  }
+  #stage {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    display: block;
+  }
+  #hud-top {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    pointer-events: none;
+    z-index: 10;
+    gap: 8px;
+  }
+  .hud-card {
+    pointer-events: auto;
+    background: rgba(12, 26, 24, 0.88);
+    border: 1px solid rgba(92, 224, 210, 0.28);
+    border-radius: 12px;
+    color: #F4F3EE;
+    padding: 7px 11px;
+    max-width: 72%;
+  }
+  .hud-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #F4B860;
+    line-height: 1.2;
+  }
+  .hud-sub {
+    font-size: 11px;
+    color: #CBE4DF;
+    margin-top: 2px;
+    line-height: 1.25;
+  }
+  #controls-dock {
+    position: fixed;
+    bottom: 10px;
+    left: 10px;
+    right: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .pill-group {
+    pointer-events: auto;
+    display: flex;
+    gap: 6px;
+    background: rgba(12, 26, 24, 0.88);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 999px;
+    padding: 4px 6px;
+  }
+  .hud-btn {
+    background: transparent;
+    color: #E2ECEA;
+    border: none;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 5px 10px;
+    cursor: pointer;
+    min-height: 28px;
+  }
+  .hud-btn.active {
+    background: #0F6A63;
+    color: #FFFFFF;
+  }
+  #inspector-pill {
+    pointer-events: auto;
+    background: rgba(20, 38, 35, 0.94);
+    border: 1px solid rgba(244, 184, 96, 0.45);
+    border-radius: 12px;
+    padding: 6px 11px;
+    color: #F4F3EE;
+    font-size: 11px;
+    max-width: 65%;
+    display: none;
+  }
+  #inspector-pill strong {
+    color: #5CE0D2;
+    display: block;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<div id="hud-top">
+  <div class="hud-card" id="title-card">
+    <div class="hud-title" id="scene-title">A-Tutor 3D Lab</div>
+    <div class="hud-sub" id="scene-subtitle">Drag to orbit • Pinch to zoom • Tap a part to inspect</div>
+  </div>
+</div>
+
+<div id="controls-dock">
+  <div id="inspector-pill">
+    <strong id="part-name">Part</strong>
+    <span id="part-desc">Details</span>
+  </div>
+  <div class="pill-group">
+    <button class="hud-btn active" id="btn-rotate" onclick="window.toggleAutoRotate()">Spin</button>
+    <button class="hud-btn" id="btn-explode" onclick="window.toggleExplode()">Explode</button>
+    <button class="hud-btn" id="btn-wire" onclick="window.toggleWireframe()">Mesh</button>
+    <button class="hud-btn" onclick="window.resetCamera()">Reset</button>
+  </div>
+</div>
+
+<script src="three_bundle.js"></script>
+<script>
+(function () {
+  const THREE = window.THREE;
+  const OrbitControls = window.OrbitControls;
+  const RoomEnvironment = window.RoomEnvironment;
+
+  const canvas = document.getElementById('stage');
+  const titleEl = document.getElementById('scene-title');
+  const subtitleEl = document.getElementById('scene-subtitle');
+  const inspectorEl = document.getElementById('inspector-pill');
+  const partNameEl = document.getElementById('part-name');
+  const partDescEl = document.getElementById('part-desc');
+
+  // Renderer setup (ACESFilmicToneMapping + soft shadows)
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.08;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  const scene = new THREE.Scene();
+  const initialBg = new THREE.Color('#0E221F');
+  scene.background = initialBg;
+  scene.fog = new THREE.FogExp2(initialBg.getHex(), 0.022);
+
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+  const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 140);
+  camera.position.set(4.5, 3.2, 5.4);
+
+  const controls = new OrbitControls(camera, canvas);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.maxPolarAngle = Math.PI * 0.495;
+  controls.minDistance = 1.5;
+  controls.maxDistance = 26;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 0.9;
+
+  // Lighting: Warm Key Shadow Light + Cool Sky/Warm Ground Hemisphere Fill + Rim
+  const hemiLight = new THREE.HemisphereLight('#D8ECFF', '#1C2824', 0.55);
+  scene.add(hemiLight);
+
+  const keyLight = new THREE.DirectionalLight('#FFF3E0', 2.4);
+  keyLight.position.set(5, 8.5, 5.5);
+  keyLight.castShadow = true;
+  keyLight.shadow.mapSize.set(1024, 1024);
+  keyLight.shadow.camera.near = 1;
+  keyLight.shadow.camera.far = 25;
+  keyLight.shadow.camera.left = -6;
+  keyLight.shadow.camera.right = 6;
+  keyLight.shadow.camera.top = 6;
+  keyLight.shadow.camera.bottom = -6;
+  keyLight.shadow.bias = -0.0005;
+  scene.add(keyLight);
+
+  const rimLight = new THREE.DirectionalLight('#6FE5D8', 0.75);
+  rimLight.position.set(-5, 4, -5);
+  scene.add(rimLight);
+
+  // Procedural Micro-Grain Texture (Zero external asset URLs)
+  function createNoiseTexture(base, variance) {
+    const c = document.createElement('canvas');
+    c.width = 128;
+    c.height = 128;
+    const ctx = c.getContext('2d');
+    const img = ctx.createImageData(128, 128);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const v = Math.max(0, Math.min(255, base + (Math.random() - 0.5) * variance));
+      img.data[i] = v;
+      img.data[i + 1] = v;
+      img.data[i + 2] = v;
+      img.data[i + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(3, 3);
+    return tex;
+  }
+
+  function createContactShadowTexture() {
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 256;
+    const ctx = c.getContext('2d');
+    const grad = ctx.createRadialGradient(128, 128, 12, 128, 128, 124);
+    grad.addColorStop(0, 'rgba(0,0,0,0.48)');
+    grad.addColorStop(0.55, 'rgba(0,0,0,0.18)');
+    grad.addColorStop(1, 'rgba(0,0,0,0.0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 256, 256);
+    return new THREE.CanvasTexture(c);
+  }
+
+  const grainBump = createNoiseTexture(128, 42);
+  const contactTex = createContactShadowTexture();
+
+  // Seamless studio floor & subtle calibration ring
+  const floorGeo = new THREE.PlaneGeometry(80, 80);
+  floorGeo.rotateX(-Math.PI / 2);
+  const floorMat = new THREE.MeshStandardMaterial({
+    color: '#112623',
+    roughness: 0.92,
+    metalness: 0.04,
+    bumpMap: grainBump,
+    bumpScale: 0.008
+  });
+  const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+  floorMesh.receiveShadow = true;
+  scene.add(floorMesh);
+
+  const stageRing = new THREE.Mesh(
+    new THREE.RingGeometry(2.3, 2.36, 64).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ color: '#5CE0D2', transparent: true, opacity: 0.22, side: THREE.DoubleSide })
+  );
+  stageRing.position.y = 0.003;
+  scene.add(stageRing);
+
+  const contactShadow = new THREE.Mesh(
+    new THREE.PlaneGeometry(4.2, 4.2).rotateX(-Math.PI / 2),
+    new THREE.MeshBasicMaterial({ map: contactTex, transparent: true, depthWrite: false })
+  );
+  contactShadow.position.y = 0.004;
+  scene.add(contactShadow);
+
+  // State & Reusable Scratch Math
+  let modelRoot = new THREE.Group();
+  scene.add(modelRoot);
+
+  const animatedItems = [];
+  const selectableMeshes = [];
+  let selectedMesh = null;
+  let wireframeEnabled = false;
+  let explodeFactorTarget = 0;
+  let explodeFactorCurrent = 0;
+
+  let desiredCamPos = new THREE.Vector3(4.5, 3.2, 5.4);
+  let desiredTarget = new THREE.Vector3(0, 1.1, 0);
+  let camTransitionTimer = 0;
+
+  const _box = new THREE.Box3();
+  const _center = new THREE.Vector3();
+  const _size = new THREE.Vector3();
+  const _dir = new THREE.Vector3();
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+
+  function buildPartGeometry(part) {
+    const p = part.params || {};
+    const type = (part.type || 'sphere').toLowerCase();
+    switch (type) {
+      case 'box':
+        return new THREE.BoxGeometry(p.width ?? 1, p.height ?? 1, p.depth ?? 1);
+      case 'bevel_box': {
+        const w = (p.width ?? 1) * 0.5;
+        const h = (p.height ?? 1) * 0.5;
+        const d = p.depth ?? 0.6;
+        const shape = new THREE.Shape();
+        const r = Math.min(w, h) * 0.18;
+        shape.moveTo(-w + r, -h);
+        shape.lineTo(w - r, -h);
+        shape.quadraticCurveTo(w, -h, w, -h + r);
+        shape.lineTo(w, h - r);
+        shape.quadraticCurveTo(w, h, w - r, h);
+        shape.lineTo(-w + r, h);
+        shape.quadraticCurveTo(-w, h, -w, h - r);
+        shape.lineTo(-w, -h + r);
+        shape.quadraticCurveTo(-w, -h, -w + r, -h);
+        const geo = new THREE.ExtrudeGeometry(shape, {
+          depth: d,
+          bevelEnabled: true,
+          bevelThickness: Math.min(0.08, d * 0.15),
+          bevelSize: 0.05,
+          bevelSegments: 3
+        });
+        geo.center();
+        return geo;
+      }
+      case 'cylinder':
+        return new THREE.CylinderGeometry(
+          p.radiusTop ?? p.radius ?? 0.4,
+          p.radiusBottom ?? p.radius ?? 0.4,
+          p.height ?? 1.4,
+          36
+        );
+      case 'cone':
+        return new THREE.ConeGeometry(p.radius ?? 0.5, p.height ?? 1.2, 36);
+      case 'torus':
+        return new THREE.TorusGeometry(p.radius ?? 1.0, p.tube ?? 0.14, 24, 64);
+      case 'ring': {
+        const geo = new THREE.TorusGeometry(p.radius ?? 1.4, p.tube ?? 0.045, 16, 72);
+        geo.rotateX(Math.PI / 2);
+        return geo;
+      }
+      case 'icosahedron':
+        return new THREE.IcosahedronGeometry(p.radius ?? 0.65, p.detail ?? 1);
+      case 'lathe': {
+        const pts = (part.profile && part.profile.length >= 2 ? part.profile : [[0.01, 0], [0.55, 0.25], [0.3, 0.8], [0.42, 1.3], [0.01, 1.35]])
+          .map(pair => new THREE.Vector2(Math.max(0.005, pair[0]), pair[1]));
+        return new THREE.LatheGeometry(pts, 40);
+      }
+      case 'tube': {
+        const raw = (part.points && part.points.length >= 2)
+          ? part.points
+          : [[-1, 0, 0], [-0.3, 0.7, 0.4], [0.4, 1.3, -0.3], [1, 1.8, 0.2]];
+        const curve = new THREE.CatmullRomCurve3(raw.map(v => new THREE.Vector3(v[0], v[1], v[2])));
+        return new THREE.TubeGeometry(curve, 48, p.tube ?? 0.08, 16, false);
+      }
+      case 'helix': {
+        const radius = p.radius ?? 0.7;
+        const height = p.height ?? 2.8;
+        const turns = p.turns ?? 2.2;
+        const phase = p.phase ?? 0;
+        const pts = [];
+        const steps = 64;
+        for (let i = 0; i <= steps; i++) {
+          const t = i / steps;
+          const angle = t * turns * Math.PI * 2 + phase;
+          pts.push(new THREE.Vector3(
+            Math.cos(angle) * radius,
+            (t - 0.5) * height,
+            Math.sin(angle) * radius
+          ));
+        }
+        const curve = new THREE.CatmullRomCurve3(pts);
+        return new THREE.TubeGeometry(curve, 64, p.tube ?? 0.075, 14, false);
+      }
+      case 'sphere':
+      default:
+        return new THREE.SphereGeometry(p.radius ?? 0.55, 36, 24);
+    }
+  }
+
+  function disposeModelRoot() {
+    animatedItems.length = 0;
+    selectableMeshes.length = 0;
+    selectedMesh = null;
+    inspectorEl.style.display = 'none';
+    modelRoot.traverse(obj => {
+      if (obj.isMesh) {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material) {
+          if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+          else obj.material.dispose();
+        }
+      }
+    });
+    scene.remove(modelRoot);
+    modelRoot = new THREE.Group();
+    scene.add(modelRoot);
+  }
+
+  window.loadSceneSpec = function (specOrJson) {
+    try {
+      const spec = typeof specOrJson === 'string' ? JSON.parse(specOrJson) : specOrJson;
+      if (!spec || !Array.isArray(spec.parts)) return;
+
+      disposeModelRoot();
+
+      titleEl.textContent = spec.title || 'A-Tutor 3D Model';
+      subtitleEl.textContent = spec.subtitle || 'Drag to orbit • Pinch to zoom • Tap a part';
+
+      if (spec.backgroundHex) {
+        const bgCol = new THREE.Color(spec.backgroundHex);
+        scene.background = bgCol;
+        scene.fog = new THREE.FogExp2(bgCol.getHex(), 0.02);
+        floorMat.color.copy(bgCol).multiplyScalar(1.08);
+      }
+
+      const isFloatingSystem = Boolean(spec.floating);
+
+      spec.parts.forEach((part, idx) => {
+        const geo = buildPartGeometry(part);
+        const opacity = part.opacity !== undefined ? Number(part.opacity) : 1.0;
+        const transparent = opacity < 0.99;
+        const mat = new THREE.MeshStandardMaterial({
+          color: part.colorHex || '#5CE0D2',
+          roughness: part.roughness !== undefined ? Number(part.roughness) : 0.42,
+          metalness: part.metalness !== undefined ? Number(part.metalness) : 0.15,
+          emissive: new THREE.Color(part.emissiveHex || part.colorHex || '#000000'),
+          emissiveIntensity: part.emissiveIntensity !== undefined ? Number(part.emissiveIntensity) : (part.emissiveHex ? 0.55 : 0.0),
+          transparent,
+          opacity,
+          depthWrite: !transparent,
+          bumpMap: grainBump,
+          bumpScale: 0.005,
+          wireframe: wireframeEnabled
+        });
+
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.castShadow = !transparent;
+        mesh.receiveShadow = true;
+
+        const pos = part.position || [0, 0, 0];
+        const rot = part.rotation || [0, 0, 0];
+        const scl = part.scale || [1, 1, 1];
+
+        mesh.position.set(pos[0] || 0, pos[1] || 0, pos[2] || 0);
+        mesh.rotation.set(rot[0] || 0, rot[1] || 0, rot[2] || 0);
+        mesh.scale.set(scl[0] || 1, scl[1] || 1, scl[2] || 1);
+
+        mesh.userData = {
+          label: part.label || ('Component ' + (idx + 1)),
+          description: part.description || '',
+          basePos: mesh.position.clone(),
+          baseRot: mesh.rotation.clone(),
+          baseScale: mesh.scale.clone(),
+          animation: part.animation || 'none',
+          orbitRadius: Math.hypot(pos[0] || 0, pos[2] || 0),
+          orbitAngle: Math.atan2(pos[2] || 0, pos[0] || 0),
+          orbitSpeed: part.orbitSpeed !== undefined ? Number(part.orbitSpeed) : 0.55,
+          baseEmissive: mat.emissiveIntensity
+        };
+
+        modelRoot.add(mesh);
+        selectableMeshes.push(mesh);
+        if (part.animation && part.animation !== 'none') {
+          animatedItems.push(mesh);
+        }
+      });
+
+      // Compute tight bounds, seat model flush at y = 0 (or clean hover if floating)
+      _box.setFromObject(modelRoot);
+      if (!_box.isEmpty()) {
+        _box.getCenter(_center);
+        _box.getSize(_size);
+        modelRoot.position.x = -_center.x;
+        modelRoot.position.z = -_center.z;
+        modelRoot.position.y = isFloatingSystem ? (-_box.min.y + 0.35) : -_box.min.y;
+
+        // Compute explode vectors outward from group center
+        _box.setFromObject(modelRoot);
+        _box.getCenter(_center);
+        const radius = Math.max(1.2, _size.length() * 0.55);
+
+        selectableMeshes.forEach(mesh => {
+          mesh.getWorldPosition(_dir);
+          _dir.sub(_center);
+          if (_dir.lengthSq() < 0.001) {
+            _dir.set(0, 1, 0);
+          } else {
+            _dir.normalize();
+          }
+          mesh.userData.explodeDir = _dir.clone();
+          mesh.userData.explodeDist = Math.min(1.6, radius * 0.55);
+        });
+
+        // Adjust stage ring & contact shadow scale to model footprint
+        const footprint = Math.max(1.8, Math.max(_size.x, _size.z) * 1.15);
+        contactShadow.scale.set(footprint * 0.45, footprint * 0.45, 1);
+        stageRing.scale.set(footprint * 0.28, footprint * 0.28, 1);
+
+        // Auto-frame camera smoothly
+        desiredTarget.copy(_center);
+        desiredCamPos.set(
+          _center.x + radius * 1.35,
+          Math.max(1.1, _center.y + radius * 0.72),
+          _center.z + radius * 1.55
+        );
+        camTransitionTimer = 0.9;
+      }
+
+      explodeFactorTarget = 0;
+      explodeFactorCurrent = 0;
+      document.getElementById('btn-explode').classList.remove('active');
+    } catch (err) {
+      console.error('loadSceneSpec error:', err);
+    }
+  };
+
+  window.resetCamera = function () {
+    camTransitionTimer = 0.75;
+  };
+
+  window.toggleAutoRotate = function () {
+    controls.autoRotate = !controls.autoRotate;
+    document.getElementById('btn-rotate').classList.toggle('active', controls.autoRotate);
+  };
+
+  window.toggleExplode = function () {
+    explodeFactorTarget = explodeFactorTarget > 0.5 ? 0 : 1;
+    document.getElementById('btn-explode').classList.toggle('active', explodeFactorTarget > 0.5);
+  };
+
+  window.toggleWireframe = function () {
+    wireframeEnabled = !wireframeEnabled;
+    document.getElementById('btn-wire').classList.toggle('active', wireframeEnabled);
+    selectableMeshes.forEach(m => {
+      m.material.wireframe = wireframeEnabled;
+    });
+  };
+
+  // Raycast Tap-to-Inspect
+  let pointerDownX = 0;
+  let pointerDownY = 0;
+  canvas.addEventListener('pointerdown', (e) => {
+    pointerDownX = e.clientX;
+    pointerDownY = e.clientY;
+  });
+  canvas.addEventListener('pointerup', (e) => {
+    const moved = Math.hypot(e.clientX - pointerDownX, e.clientY - pointerDownY);
+    if (moved > 8) return;
+    const rect = canvas.getBoundingClientRect();
+    pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    const hits = raycaster.intersectObjects(selectableMeshes, false);
+
+    if (selectedMesh) {
+      selectedMesh.material.emissiveIntensity = selectedMesh.userData.baseEmissive;
+      selectedMesh = null;
+    }
+
+    if (hits.length > 0) {
+      selectedMesh = hits[0].object;
+      selectedMesh.material.emissiveIntensity = Math.max(0.42, selectedMesh.userData.baseEmissive + 0.35);
+      partNameEl.textContent = selectedMesh.userData.label;
+      partDescEl.textContent = selectedMesh.userData.description || '3D structural component';
+      inspectorEl.style.display = 'block';
+      if (window.AndroidBridge && window.AndroidBridge.onPartSelected) {
+        window.AndroidBridge.onPartSelected(selectedMesh.userData.label, selectedMesh.userData.description || '');
+      }
+    } else {
+      inspectorEl.style.display = 'none';
+    }
+  });
+
+  window.addEventListener('resize', () => {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    if (w > 0 && h > 0) {
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h, false);
+    }
+  });
+
+  const clock = new THREE.Clock();
+  let elapsed = 0;
+
+  function animate() {
+    requestAnimationFrame(animate);
+    const dt = Math.min(clock.getDelta(), 0.05);
+    elapsed += dt;
+
+    // Smooth camera framing transition on scene load / reset
+    if (camTransitionTimer > 0) {
+      const alpha = 1 - Math.exp(-5.5 * dt);
+      camera.position.lerp(desiredCamPos, alpha);
+      controls.target.lerp(desiredTarget, alpha);
+      camTransitionTimer = Math.max(0, camTransitionTimer - dt);
+    }
+
+    // Exponentially damped Exploded View interpolation
+    const expAlpha = 1 - Math.exp(-7 * dt);
+    explodeFactorCurrent += (explodeFactorTarget - explodeFactorCurrent) * expAlpha;
+
+    for (let i = 0; i < selectableMeshes.length; i++) {
+      const m = selectableMeshes[i];
+      const u = m.userData;
+      const offsetDist = explodeFactorCurrent * (u.explodeDist || 0);
+      const ex = (u.explodeDir ? u.explodeDir.x : 0) * offsetDist;
+      const ey = (u.explodeDir ? u.explodeDir.y : 0) * offsetDist;
+      const ez = (u.explodeDir ? u.explodeDir.z : 0) * offsetDist;
+
+      if (u.animation === 'orbitY' && u.orbitRadius > 0.05) {
+        const ang = u.orbitAngle + elapsed * u.orbitSpeed;
+        m.position.set(Math.cos(ang) * u.orbitRadius + ex, u.basePos.y + ey, Math.sin(ang) * u.orbitRadius + ez);
+      } else if (u.animation === 'bob') {
+        m.position.set(u.basePos.x + ex, u.basePos.y + Math.sin(elapsed * 2.2) * 0.08 + ey, u.basePos.z + ez);
+      } else {
+        m.position.set(u.basePos.x + ex, u.basePos.y + ey, u.basePos.z + ez);
+      }
+
+      if (u.animation === 'spinY') {
+        m.rotation.y = u.baseRot.y + elapsed * 0.85;
+      } else if (u.animation === 'pulse') {
+        const s = 1 + Math.sin(elapsed * 3.0) * 0.06;
+        m.scale.set(u.baseScale.x * s, u.baseScale.y * s, u.baseScale.z * s);
+      }
+    }
+
+    controls.update();
+    renderer.render(scene, camera);
+  }
+
+  animate();
+
+  if (window.AndroidBridge && window.AndroidBridge.onStudioReady) {
+    window.AndroidBridge.onStudioReady();
+  }
+})();
+</script>
+</body>
+</html>

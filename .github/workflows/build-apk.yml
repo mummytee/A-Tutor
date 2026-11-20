@@ -33,7 +33,7 @@ jobs:
           fi
           chmod +x gradlew
 
-      - name: Restore Permanent Keystore
+      - name: Restore Permanent Keystore & Upload Signing Key
         run: |
           if [ -f debug.keystore.base64 ]; then
             base64 -d debug.keystore.base64 > debug.keystore
@@ -42,6 +42,18 @@ jobs:
           fi
           mkdir -p ~/.android
           cp debug.keystore ~/.android/debug.keystore
+          rm -f my-upload-key.jks
+          keytool -importkeystore \
+            -srckeystore debug.keystore \
+            -srcstorepass android \
+            -srcalias androiddebugkey \
+            -srckeypass android \
+            -destkeystore my-upload-key.jks \
+            -deststoretype PKCS12 \
+            -deststorepass android \
+            -destalias upload \
+            -destkeypass android \
+            -noprompt
 
       - name: Setup Environment Variables
         run: |
@@ -67,21 +79,24 @@ jobs:
             echo "Restored app/google-services.json from embedded project configuration"
           fi
 
-      - name: Build Debug APK
+      - name: Build Release APK
         id: build_apk
         env:
           VERSION_CODE: ${{ github.run_number }}
-        run: ./gradlew assembleDebug --stacktrace
+          KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
+          STORE_PASSWORD: android
+          KEY_PASSWORD: android
+        run: ./gradlew assembleRelease --stacktrace
 
       - name: Prepare APK Asset
         run: |
           mkdir -p release-assets
-          APK_FILE=$(find app/build/outputs/apk/debug/ -name "*.apk" | head -n 1)
+          APK_FILE=$(find app/build/outputs/apk/release/ -name "*.apk" | head -n 1)
           if [ -n "$APK_FILE" ]; then
             cp "$APK_FILE" release-assets/A-Tutor.apk
             echo "Successfully prepared A-Tutor.apk from $APK_FILE"
           else
-            echo "Error: No APK found in app/build/outputs/apk/debug/"
+            echo "Error: No APK found in app/build/outputs/apk/release/"
             exit 1
           fi
 

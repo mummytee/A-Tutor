@@ -739,17 +739,104 @@ private fun parseChalkColor(hex: String, fallback: Color): Color {
 }
 
 private fun evaluateMathExpression(exprRaw: String, x: Double): Double? {
-    val expr = exprRaw.lowercase().replace("y=", "").replace("f(x)=", "").replace(" ", "")
-    return when {
-        expr.contains("sin") -> sin(x)
-        expr.contains("cos") -> cos(x)
-        expr.contains("x^3") -> x.pow(3)
-        expr.contains("x^2") -> x.pow(2) - 1.0
-        expr.contains("sqrt") -> if (x >= 0) sqrt(x) else null
-        expr.contains("2x+1") -> 2 * x + 1
-        expr.contains("-x") -> -x
-        expr == "x" -> x
-        else -> x.pow(2) * 0.4 - 1.0
+    val clean = exprRaw.lowercase()
+        .replace("y=", "")
+        .replace("f(x)=", "")
+        .replace(" ", "")
+        .replace("×", "*")
+        .replace("−", "-")
+        .replace(Regex("(\\d)([x(])"), "$1*$2")
+        .replace(Regex("([x)])([\\d(])"), "$1*$2")
+    if (clean.isBlank()) return null
+    return runCatching { MathExprParser(clean, x).parseExpression() }
+        .getOrNull()
+        ?.takeIf { it.isFinite() }
+}
+
+private class MathExprParser(
+    private val clean: String,
+    private val x: Double
+) {
+    private var pos = 0
+    private fun ch(): Char? = clean.getOrNull(pos)
+
+    fun parseExpression(): Double {
+        var value = parseTerm()
+        while (ch() == '+' || ch() == '-') {
+            val op = ch()
+            pos++
+            val rhs = parseTerm()
+            value = if (op == '+') value + rhs else value - rhs
+        }
+        return value
+    }
+
+    private fun parseTerm(): Double {
+        var value = parseFactor()
+        while (ch() == '*' || ch() == '/') {
+            val op = ch()
+            pos++
+            val rhs = parseFactor()
+            value = if (op == '*') value * rhs else value / rhs
+        }
+        return value
+    }
+
+    private fun parseFactor(): Double {
+        var base = parseUnary()
+        while (ch() == '^') {
+            pos++
+            val exp = parseUnary()
+            base = base.pow(exp)
+        }
+        return base
+    }
+
+    private fun parseUnary(): Double {
+        return when (ch()) {
+            '+' -> { pos++; parseUnary() }
+            '-' -> { pos++; -parseUnary() }
+            else -> parsePrimary()
+        }
+    }
+
+    private fun parsePrimary(): Double {
+        if (ch() == '(') {
+            pos++
+            val v = parseExpression()
+            if (ch() == ')') pos++
+            return v
+        }
+        if (ch() == 'x') {
+            pos++
+            return x
+        }
+        if (ch()?.isLetter() == true) {
+            val start = pos
+            while (ch()?.isLetter() == true) pos++
+            val name = clean.substring(start, pos)
+            if (name == "pi") return Math.PI
+            if (name == "e") return Math.E
+            val arg = if (ch() == '(') {
+                pos++
+                val inner = parseExpression()
+                if (ch() == ')') pos++
+                inner
+            } else parseUnary()
+            return when (name) {
+                "sin" -> sin(arg)
+                "cos" -> cos(arg)
+                "tan" -> kotlin.math.tan(arg)
+                "sqrt" -> sqrt(arg)
+                "abs" -> kotlin.math.abs(arg)
+                "ln" -> kotlin.math.ln(arg)
+                else -> Double.NaN
+            }
+        }
+        val start = pos
+        while (ch()?.let { it.isDigit() || it == '.' } == true) pos++
+        if (start == pos) return Double.NaN
+        return clean.substring(start, pos).toDoubleOrNull() ?: Double.NaN
     }
 }
 

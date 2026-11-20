@@ -182,6 +182,14 @@ test("Conversations & Messages: create, chalkboard update, parent gate, immutabl
     })
   );
 
+  // Update 3D model scene JSON
+  await assertSucceeds(
+    convRef.update({
+      scene3dJson: JSON.stringify({ title: "Carbon Atom", parts: [] }),
+      updatedAt: new Date(Date.now() - 450),
+    })
+  );
+
   // Reject @DocumentId 'id' inside doc body
   await assertFails(
     aliceDb

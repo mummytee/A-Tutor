@@ -222,7 +222,8 @@ class ATutorViewModel(
         subject: String,
         topic: String,
         boardType: BoardType = BoardType.GENERAL,
-        initialBoardElements: List<BoardElement> = emptyList()
+        initialBoardElements: List<BoardElement> = emptyList(),
+        initialScene3dJson: String = ""
     ): String? {
         val result = repository.createConversation(
             uid = currentUserId,
@@ -230,7 +231,8 @@ class ATutorViewModel(
             subject = subject,
             topic = topic,
             boardType = boardType,
-            initialBoardElements = initialBoardElements
+            initialBoardElements = initialBoardElements,
+            initialScene3dJson = initialScene3dJson
         )
         return result.fold(
             onSuccess = { id ->
@@ -272,6 +274,26 @@ class ATutorViewModel(
         viewModelScope.launch {
             repository.updateChalkboard(currentUserId, chatId, boardType, elements)
                 .onFailure { _actionStatusMessage.value = it.localizedMessage ?: "Failed to save board." }
+        }
+    }
+
+    fun updateScene3D(scene3dJson: String) {
+        val chatId = _activeChatId.value
+        if (chatId.isNullOrBlank()) {
+            viewModelScope.launch {
+                createNewConversation(
+                    title = "3D Model Lab",
+                    subject = "Science",
+                    topic = "Interactive 3D Exploration",
+                    boardType = BoardType.SCIENCE,
+                    initialScene3dJson = scene3dJson
+                )
+            }
+            return
+        }
+        viewModelScope.launch {
+            repository.updateScene3D(currentUserId, chatId, scene3dJson)
+                .onFailure { _actionStatusMessage.value = it.localizedMessage ?: "Failed to save 3D model." }
         }
     }
 
@@ -331,6 +353,7 @@ class ATutorViewModel(
                 var sources = emptyList<String>()
                 var updatedType: BoardType? = null
                 var updatedElements: List<BoardElement>? = null
+                var updatedScene3d: String? = null
                 var newMemory: String? = null
 
                 aiService.sendTutorMessageStream(
@@ -351,6 +374,7 @@ class ATutorViewModel(
                         sources = event.groundingSources
                         updatedType = event.updatedBoardType
                         updatedElements = event.updatedBoardElements
+                        updatedScene3d = event.updatedScene3dJson
                         newMemory = event.addedMemoryNote
                     }
                 }
@@ -361,10 +385,11 @@ class ATutorViewModel(
                     role = "model",
                     text = finalEventText,
                     groundingSources = sources,
-                    hasBoardAction = updatedElements != null,
+                    hasBoardAction = updatedElements != null || !updatedScene3d.isNullOrBlank(),
                     hasImageAttachment = false,
                     newBoardType = updatedType,
-                    newBoardElements = updatedElements
+                    newBoardElements = updatedElements,
+                    newScene3dJson = updatedScene3d
                 )
 
                 if (!newMemory.isNullOrBlank()) {
@@ -492,7 +517,7 @@ class ATutorViewModel(
         }
     }
 
-    // --- Live Voice Learning (gemini-3.8-live) ---
+    // --- Live Voice Learning (gemini-3.1-flash-live-preview + fallback) ---
 
     fun startLiveVoiceSession(subject: String, topic: String) {
         if (_liveVoiceState.value is LiveVoiceUiState.Active ||
@@ -502,48 +527,66 @@ class ATutorViewModel(
         liveVoiceJob?.cancel()
         liveVoiceJob = viewModelScope.launch {
             _liveVoiceState.value = LiveVoiceUiState.Connecting
+            val profile = (userProfileState.value as? UiState.Success)?.data
             try {
-                val profile = (userProfileState.value as? UiState.Success)?.data
-                val model = aiService.createLiveTutorModel(profile, subject, topic)
-                val session = model.connect()
-                liveSession = session
-
-                _liveVoiceState.value = LiveVoiceUiState.Active(subject = subject, topic = topic)
-
-                session.startAudioConversation(
-                    functionCallHandler = { call ->
-                        com.google.firebase.ai.type.FunctionResponsePart(
-                            name = call.name,
-                            response = kotlinx.serialization.json.JsonObject(emptyMap())
-                        )
-                    },
-                    transcriptHandler = { inputT, outputT ->
-                        val cur = _liveVoiceState.value as? LiveVoiceUiState.Active ?: return@startAudioConversation
-                        val newUser = inputT?.text?.trim().orEmpty()
-                        val newTutor = outputT?.text?.trim().orEmpty()
-                        val updatedHistory = cur.transcriptHistory.toMutableList()
-                        if (newUser.isNotBlank() && newUser != cur.liveUserText) {
-                            updatedHistory.add(LiveTranscriptLine("You", newUser))
-                        }
-                        if (newTutor.isNotBlank() && newTutor != cur.liveTutorText) {
-                            updatedHistory.add(LiveTranscriptLine("A-Tutor", newTutor))
-                        }
-                        _liveVoiceState.value = cur.copy(
-                            liveUserText = newUser.ifBlank { cur.liveUserText },
-                            liveTutorText = newTutor.ifBlank { cur.liveTutorText },
-                            transcriptHistory = updatedHistory.takeLast(30)
-                        )
-                    }
-                )
+                connectAndRunLiveSession(profile, subject, topic, useFallback = false)
             } catch (e: CancellationException) {
                 throw e
-            } catch (e: Exception) {
-                Log.e(TAG, "Live Voice session error", e)
-                _liveVoiceState.value = LiveVoiceUiState.Error(
-                    e.localizedMessage ?: "Unable to connect Live Voice session."
-                )
+            } catch (primaryErr: Exception) {
+                Log.w(TAG, "Primary Live model failed (${primaryErr.message}), retrying fallback", primaryErr)
+                runCatching { liveSession?.stopAudioConversation() }
+                runCatching { liveSession?.close() }
+                liveSession = null
+                try {
+                    connectAndRunLiveSession(profile, subject, topic, useFallback = true)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (fallbackErr: Exception) {
+                    Log.e(TAG, "Live Voice session error", fallbackErr)
+                    _liveVoiceState.value = LiveVoiceUiState.Error(
+                        fallbackErr.localizedMessage ?: primaryErr.localizedMessage ?: "Unable to connect Live Voice session."
+                    )
+                }
             }
         }
+    }
+
+    private suspend fun connectAndRunLiveSession(
+        profile: UserProfile?,
+        subject: String,
+        topic: String,
+        useFallback: Boolean
+    ) {
+        val model = aiService.createLiveTutorModel(profile, subject, topic, useFallback = useFallback)
+        val session = model.connect()
+        liveSession = session
+        _liveVoiceState.value = LiveVoiceUiState.Active(subject = subject, topic = topic)
+
+        session.startAudioConversation(
+            functionCallHandler = { call ->
+                com.google.firebase.ai.type.FunctionResponsePart(
+                    name = call.name,
+                    response = kotlinx.serialization.json.JsonObject(emptyMap())
+                )
+            },
+            transcriptHandler = { inputT, outputT ->
+                val cur = _liveVoiceState.value as? LiveVoiceUiState.Active ?: return@startAudioConversation
+                val newUser = inputT?.text?.trim().orEmpty()
+                val newTutor = outputT?.text?.trim().orEmpty()
+                val updatedHistory = cur.transcriptHistory.toMutableList()
+                if (newUser.isNotBlank() && newUser != cur.liveUserText) {
+                    updatedHistory.add(LiveTranscriptLine("You", newUser))
+                }
+                if (newTutor.isNotBlank() && newTutor != cur.liveTutorText) {
+                    updatedHistory.add(LiveTranscriptLine("A-Tutor", newTutor))
+                }
+                _liveVoiceState.value = cur.copy(
+                    liveUserText = newUser.ifBlank { cur.liveUserText },
+                    liveTutorText = newTutor.ifBlank { cur.liveTutorText },
+                    transcriptHistory = updatedHistory.takeLast(30)
+                )
+            }
+        )
     }
 
     fun stopLiveVoiceSession(saveSummaryToChat: Boolean = true) {

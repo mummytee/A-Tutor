@@ -8,7 +8,11 @@ import com.example.data.BoardElement
 import com.example.data.BoardType
 import com.example.data.ChatMessage
 import com.example.data.FlashcardItem
+import com.example.data.Part3DParams
+import com.example.data.Part3DSpec
 import com.example.data.QuizQuestion
+import com.example.data.Scene3DSpec
+import com.example.data.ThreeDPresets
 import com.example.data.UserProfile
 import com.google.firebase.Firebase
 import com.google.firebase.ai.GenerativeModel
@@ -33,6 +37,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
@@ -51,6 +56,7 @@ data class TutorTurnEvent(
     val groundingSources: List<String> = emptyList(),
     val updatedBoardType: BoardType? = null,
     val updatedBoardElements: List<BoardElement>? = null,
+    val updatedScene3dJson: String? = null,
     val addedMemoryNote: String? = null
 )
 
@@ -84,10 +90,11 @@ class AiTutorService {
         const val MODEL_FAST = "gemini-3.5-flash-lite"
         const val MODEL_REASONING = "gemini-4-argon"
         const val MODEL_HYDROGEN = "gemini-4-hydrogen"
-        const val MODEL_TTS = "gemini-3.8-flash-tts"
-        const val MODEL_TTS_FALLBACK = "gemini-3.1-flash-tts-preview"
+        const val MODEL_TTS = "gemini-3.1-flash-tts-preview"
+        const val MODEL_TTS_FALLBACK = "gemini-3.8-flash-tts"
         const val MODEL_TRANSCRIBE = "gemini-3.5-transcribe"
-        const val MODEL_LIVE = "gemini-3.8-live"
+        const val MODEL_LIVE = "gemini-3.1-flash-live-preview"
+        const val MODEL_LIVE_FALLBACK = "gemini-2.5-flash-native-audio-preview-12-2025"
         const val MODEL_IMAGE = "gemini-nano-banana-2.1"
 
         val AVAILABLE_TUTOR_MODELS = listOf(
@@ -132,6 +139,64 @@ class AiTutorService {
         optionalParameters = listOf("replaceExisting")
     )
 
+    private val scene3dToolDeclaration = FunctionDeclaration(
+        name = "update_3d_scene",
+        description = "Builds or updates an interactive 3D educational model (molecules, atoms, cells, planetary orreries, mechanical assemblies, 3D geometry, anatomical/engineering models) in the student's 3D Model Lab.",
+        parameters = mapOf(
+            "title" to Schema.string(description = "Concise title of the 3D model."),
+            "subtitle" to Schema.string(description = "Short educational subtitle explaining what is shown."),
+            "backgroundHex" to Schema.string(description = "Dark studio background hex color, e.g. #0E221F or #0D1E22."),
+            "floating" to Schema.boolean(description = "True for zero-gravity/molecular/astronomical scenes; false for tabletop grounded models."),
+            "parts" to Schema.array(
+                description = "List of 3D mesh parts composing the educational model (usually 4 to 16 parts).",
+                items = Schema.obj(
+                    properties = mapOf(
+                        "type" to Schema.enumeration(
+                            values = listOf("sphere", "box", "bevel_box", "cylinder", "cone", "torus", "ring", "icosahedron", "lathe", "tube", "helix"),
+                            description = "3D primitive or procedural geometry type."
+                        ),
+                        "label" to Schema.string(description = "Interactive tap-to-inspect part label."),
+                        "description" to Schema.string(description = "Educational note shown when the student taps this 3D part."),
+                        "colorHex" to Schema.string(description = "Base material hex color, e.g. #5CE0D2, #F4B860, #FF6B5B, #C5B4FF."),
+                        "roughness" to Schema.double(description = "PBR roughness 0.05..0.95."),
+                        "metalness" to Schema.double(description = "PBR metalness 0.0..1.0."),
+                        "opacity" to Schema.double(description = "Opacity 0.1..1.0 (use < 1.0 for membranes or glass housings)."),
+                        "emissiveHex" to Schema.string(description = "Optional self-glow hex color."),
+                        "emissiveIntensity" to Schema.double(description = "Glow intensity 0.0..1.5."),
+                        "position" to Schema.array(items = Schema.double(), description = "[x, y, z] world position around origin (~ -2.5..2.5)."),
+                        "rotation" to Schema.array(items = Schema.double(), description = "[rx, ry, rz] Euler radians."),
+                        "scale" to Schema.array(items = Schema.double(), description = "[sx, sy, sz] scale multipliers."),
+                        "animation" to Schema.enumeration(values = listOf("none", "spinY", "orbitY", "bob", "pulse")),
+                        "orbitSpeed" to Schema.double(description = "Angular speed multiplier for orbitY."),
+                        "params" to Schema.obj(
+                            properties = mapOf(
+                                "radius" to Schema.double(),
+                                "radiusTop" to Schema.double(),
+                                "radiusBottom" to Schema.double(),
+                                "width" to Schema.double(),
+                                "height" to Schema.double(),
+                                "depth" to Schema.double(),
+                                "tube" to Schema.double(),
+                                "turns" to Schema.double(),
+                                "phase" to Schema.double(),
+                                "detail" to Schema.integer()
+                            ),
+                            optionalProperties = listOf("radius", "radiusTop", "radiusBottom", "width", "height", "depth", "tube", "turns", "phase", "detail")
+                        ),
+                        "points" to Schema.array(items = Schema.array(items = Schema.double()), description = "3D polyline control points [[x,y,z],...] for tube type."),
+                        "profile" to Schema.array(items = Schema.array(items = Schema.double()), description = "2D lathe profile [[radius,y],...] for lathe surfaces of revolution.")
+                    ),
+                    optionalProperties = listOf(
+                        "description", "roughness", "metalness", "opacity", "emissiveHex",
+                        "emissiveIntensity", "position", "rotation", "scale", "animation",
+                        "orbitSpeed", "params", "points", "profile"
+                    )
+                )
+            )
+        ),
+        optionalParameters = listOf("subtitle", "backgroundHex", "floating")
+    )
+
     private val memoryToolDeclaration = FunctionDeclaration(
         name = "save_memory_note",
         description = "Saves a concise insight about the student's learning pace, strengths, or struggle areas to persistent AI memory.",
@@ -165,7 +230,8 @@ class AiTutorService {
             Teaching guidelines:
             - Explain complex ideas in clear, warm, accessible language tailored to $level level and $style style.
             - Break explanations into logical steps with concrete analogies, real-world applications, and check-in questions.
-            - Actively use the update_chalkboard tool whenever a diagram, step-by-step equation, flowchart, mind map, or coordinate graph will make the explanation clearer! Reference areas of the chalkboard directly in your explanation.
+            - Actively use update_chalkboard whenever a 2D diagram, step-by-step equation, flowchart, mind map, or coordinate graph will make the explanation clearer!
+            - Actively use update_3d_scene whenever the student asks for a 3D model or when a 3D structure (atoms, molecules, DNA/cells, solids of revolution, planetary orbits, gears/circuits) makes the concept spatial and tactile! Give each part a clear educational label and description so the student can tap parts to inspect them.
             - Use save_memory_note when you discover a meaningful strength, misconception, or preference to remember across sessions.
         """.trimIndent()
     }
@@ -195,7 +261,11 @@ class AiTutorService {
         val toolsList = if (useSearchAndMapsGrounding) {
             listOf(Tool.googleSearch(), Tool.googleMaps())
         } else {
-            listOf(Tool.functionDeclarations(listOf(chalkboardToolDeclaration, memoryToolDeclaration)))
+            listOf(
+                Tool.functionDeclarations(
+                    listOf(chalkboardToolDeclaration, scene3dToolDeclaration, memoryToolDeclaration)
+                )
+            )
         }
 
         val model = try {
@@ -228,6 +298,7 @@ class AiTutorService {
 
         var workingBoardType: BoardType? = null
         var workingBoardElements: List<BoardElement>? = null
+        var workingScene3dJson: String? = null
         var memoryNote: String? = null
         val accumulated = StringBuilder()
         val groundingLinks = linkedSetOf<String>()
@@ -284,6 +355,21 @@ class AiTutorService {
                                     )
                                 )
                             }
+                            "update_3d_scene" -> {
+                                val sceneSpec = parseScene3dCall(call.args)
+                                workingScene3dJson = ThreeDPresets.toJson(sceneSpec)
+                                toolResponses.add(
+                                    FunctionResponsePart(
+                                        name = call.name,
+                                        response = JsonObject(
+                                            mapOf(
+                                                "status" to JsonPrimitive("applied"),
+                                                "partCount" to JsonPrimitive(sceneSpec.parts.size)
+                                            )
+                                        )
+                                    )
+                                )
+                            }
                             "save_memory_note" -> {
                                 val note = (call.args["note"] as? JsonPrimitive)?.content?.trim()
                                 if (!note.isNullOrBlank()) {
@@ -313,10 +399,13 @@ class AiTutorService {
         }
 
         val finalStr = accumulated.toString().ifBlank {
-            if (workingBoardElements != null) {
-                "I've updated your interactive chalkboard to illustrate this step-by-step. Tap any element on the board to explore or ask a follow-up!"
-            } else {
-                "Let's work through this together—what part would you like to examine first?"
+            when {
+                workingScene3dJson != null ->
+                    "I've built an interactive 3D model in your 3D Model Lab! Drag to orbit, pinch to zoom, and tap any part to inspect its role."
+                workingBoardElements != null ->
+                    "I've updated your interactive chalkboard to illustrate this step-by-step. Tap any element on the board to explore or ask a follow-up!"
+                else ->
+                    "Let's work through this together—what part would you like to examine first?"
             }
         }
 
@@ -327,8 +416,71 @@ class AiTutorService {
                 groundingSources = groundingLinks.toList(),
                 updatedBoardType = workingBoardType,
                 updatedBoardElements = workingBoardElements,
+                updatedScene3dJson = workingScene3dJson,
                 addedMemoryNote = memoryNote
             )
+        )
+    }
+
+    private fun parseScene3dCall(args: Map<String, JsonElement>): Scene3DSpec {
+        val title = (args["title"] as? JsonPrimitive)?.content?.take(120) ?: "Interactive 3D Model"
+        val subtitle = (args["subtitle"] as? JsonPrimitive)?.content?.take(200)
+            ?: "Drag to orbit • Pinch to zoom • Tap any part"
+        val backgroundHex = (args["backgroundHex"] as? JsonPrimitive)?.content ?: "#0E221F"
+        val floating = (args["floating"] as? JsonPrimitive)?.booleanOrNull ?: false
+        val partsArray = args["parts"] as? JsonArray
+        val parts = partsArray?.mapNotNull { item ->
+            val obj = runCatching { item.jsonObject }.getOrNull() ?: return@mapNotNull null
+            val paramsObj = runCatching { obj["params"]?.jsonObject }.getOrNull()
+            fun doubleList(key: String, defaultVal: List<Double>): List<Double> {
+                val arr = obj[key] as? JsonArray ?: return defaultVal
+                val parsed = arr.mapNotNull { (it as? JsonPrimitive)?.doubleOrNull }
+                return if (parsed.size >= 3) parsed.take(3) else defaultVal
+            }
+            fun nestedPoints(key: String): List<List<Double>>? {
+                val arr = obj[key] as? JsonArray ?: return null
+                return arr.mapNotNull { row ->
+                    val r = row as? JsonArray ?: return@mapNotNull null
+                    r.mapNotNull { (it as? JsonPrimitive)?.doubleOrNull }
+                }.takeIf { it.isNotEmpty() }
+            }
+            Part3DSpec(
+                type = (obj["type"] as? JsonPrimitive)?.content ?: "sphere",
+                label = (obj["label"] as? JsonPrimitive)?.content?.take(60) ?: "Part",
+                description = (obj["description"] as? JsonPrimitive)?.content?.take(220) ?: "",
+                colorHex = (obj["colorHex"] as? JsonPrimitive)?.content ?: "#5CE0D2",
+                roughness = (obj["roughness"] as? JsonPrimitive)?.doubleOrNull?.coerceIn(0.05, 1.0) ?: 0.42,
+                metalness = (obj["metalness"] as? JsonPrimitive)?.doubleOrNull?.coerceIn(0.0, 1.0) ?: 0.15,
+                opacity = (obj["opacity"] as? JsonPrimitive)?.doubleOrNull?.coerceIn(0.08, 1.0) ?: 1.0,
+                emissiveHex = (obj["emissiveHex"] as? JsonPrimitive)?.content,
+                emissiveIntensity = (obj["emissiveIntensity"] as? JsonPrimitive)?.doubleOrNull?.coerceIn(0.0, 2.0) ?: 0.0,
+                position = doubleList("position", listOf(0.0, 0.0, 0.0)),
+                rotation = doubleList("rotation", listOf(0.0, 0.0, 0.0)),
+                scale = doubleList("scale", listOf(1.0, 1.0, 1.0)),
+                animation = (obj["animation"] as? JsonPrimitive)?.content ?: "none",
+                orbitSpeed = (obj["orbitSpeed"] as? JsonPrimitive)?.doubleOrNull ?: 0.55,
+                params = Part3DParams(
+                    radius = (paramsObj?.get("radius") as? JsonPrimitive)?.doubleOrNull,
+                    radiusTop = (paramsObj?.get("radiusTop") as? JsonPrimitive)?.doubleOrNull,
+                    radiusBottom = (paramsObj?.get("radiusBottom") as? JsonPrimitive)?.doubleOrNull,
+                    width = (paramsObj?.get("width") as? JsonPrimitive)?.doubleOrNull,
+                    height = (paramsObj?.get("height") as? JsonPrimitive)?.doubleOrNull,
+                    depth = (paramsObj?.get("depth") as? JsonPrimitive)?.doubleOrNull,
+                    tube = (paramsObj?.get("tube") as? JsonPrimitive)?.doubleOrNull,
+                    turns = (paramsObj?.get("turns") as? JsonPrimitive)?.doubleOrNull,
+                    phase = (paramsObj?.get("phase") as? JsonPrimitive)?.doubleOrNull,
+                    detail = (paramsObj?.get("detail") as? JsonPrimitive)?.content?.toIntOrNull()
+                ),
+                points = nestedPoints("points"),
+                profile = nestedPoints("profile")
+            )
+        }?.take(28) ?: emptyList()
+        return Scene3DSpec(
+            title = title,
+            subtitle = subtitle,
+            backgroundHex = backgroundHex,
+            floating = floating,
+            parts = parts
         )
     }
 
@@ -684,12 +836,14 @@ class AiTutorService {
     fun createLiveTutorModel(
         profile: UserProfile?,
         subject: String,
-        topic: String
+        topic: String,
+        useFallback: Boolean = false
     ): LiveGenerativeModel {
         val level = profile?.learningLevel ?: "Intermediate"
         val style = profile?.learningStyle ?: "Visual"
+        val selectedLiveModel = if (useFallback) MODEL_LIVE_FALLBACK else MODEL_LIVE
         return Firebase.ai.liveModel(
-            modelName = MODEL_LIVE,
+            modelName = selectedLiveModel,
             generationConfig = liveGenerationConfig {
                 responseModality = ResponseModality.AUDIO
                 speechConfig = SpeechConfig(voice = Voice("Kore"))

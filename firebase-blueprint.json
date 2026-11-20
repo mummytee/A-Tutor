@@ -32,6 +32,7 @@
         "topic": { "type": "string" },
         "boardType": { "type": "string", "enum": ["GENERAL", "FREEHAND", "MATH", "SCIENCE", "MINDMAP", "GRAPH"] },
         "boardElements": { "type": "array", "description": "List of interactive chalkboard element maps." },
+        "scene3dJson": { "type": "string", "description": "Serialized Three.js 3D educational scene specification." },
         "lastMessagePreview": { "type": "string" },
         "messageCount": { "type": "integer" },
         "starred": { "type": "boolean" },

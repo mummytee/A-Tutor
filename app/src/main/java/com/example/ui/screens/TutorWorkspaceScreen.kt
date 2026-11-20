@@ -58,6 +58,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Style
+import androidx.compose.material.icons.filled.ViewInAr
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -106,12 +107,14 @@ import com.example.data.Conversation
 import com.example.data.ResourceType
 import com.example.data.SubjectCatalog
 import com.example.ui.UiState
+import com.example.ui.components.Interactive3DModelStudio
 import com.example.ui.components.InteractiveChalkboard
 import kotlinx.coroutines.launch
 
 enum class WorkspaceMode(val label: String) {
-    CHAT("Tutor Chat"),
-    BOARD("Chalkboard"),
+    CHAT("Chat"),
+    BOARD("2D Board"),
+    MODEL_3D("3D Model"),
     SPLIT("Split")
 }
 
@@ -140,6 +143,7 @@ fun TutorWorkspaceScreen(
     onSendMessage: (String, Bitmap?, String) -> Unit,
     onToggleGrounding: () -> Unit,
     onUpdateBoard: (BoardType, List<BoardElement>) -> Unit,
+    onUpdateScene3D: (String) -> Unit,
     onExplainBoard: (Bitmap) -> Unit,
     onSpeakMessage: (String, String) -> Unit,
     onStartVoiceRecording: () -> Unit,
@@ -156,6 +160,7 @@ fun TutorWorkspaceScreen(
     val uriHandler = LocalUriHandler.current
 
     var workspaceMode by remember { mutableStateOf(WorkspaceMode.CHAT) }
+    var wideVisualIs3D by remember { mutableStateOf(false) }
     var inputText by remember { mutableStateOf("") }
     var attachedBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var showHistorySheet by remember { mutableStateOf(false) }
@@ -194,6 +199,8 @@ fun TutorWorkspaceScreen(
     val conversations = (conversationsState as? UiState.Success)?.data ?: emptyList()
     val boardType = activeConversation?.parsedBoardType() ?: BoardType.GENERAL
     val boardElements = activeConversation?.parsedBoardElements() ?: emptyList()
+    val scene3dJson = activeConversation?.scene3dJson ?: ""
+    val hasScene3D = scene3dJson.isNotBlank()
 
     Column(modifier = Modifier.fillMaxSize()) {
         TopAppBar(
@@ -354,16 +361,51 @@ fun TutorWorkspaceScreen(
                                 msgText
                             )
                         },
-                        onSwitchToBoard = {},
+                        onSwitchToBoard = { wideVisualIs3D = false },
+                        onSwitchTo3D = { wideVisualIs3D = true },
+                        hasScene3D = hasScene3D,
                         modifier = Modifier.weight(1f).fillMaxHeight()
                     )
-                    InteractiveChalkboard(
-                        boardType = boardType,
-                        elements = boardElements,
-                        onBoardChanged = onUpdateBoard,
-                        onAskAiExplainBoard = onExplainBoard,
-                        modifier = Modifier.weight(1f).fillMaxHeight()
-                    )
+                    Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FilterChip(
+                                selected = !wideVisualIs3D,
+                                onClick = { wideVisualIs3D = false },
+                                leadingIcon = { Icon(Icons.Default.Brush, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                                label = { Text("2D Chalkboard") }
+                            )
+                            FilterChip(
+                                selected = wideVisualIs3D,
+                                onClick = { wideVisualIs3D = true },
+                                leadingIcon = { Icon(Icons.Default.ViewInAr, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                                label = { Text("3D Model Lab") }
+                            )
+                        }
+                        if (wideVisualIs3D) {
+                            Interactive3DModelStudio(
+                                scene3dJson = scene3dJson,
+                                subject = activeConversation?.subject ?: selectedSubject,
+                                onSelectPreset = onUpdateScene3D,
+                                onAskAiBuild3D = { prompt ->
+                                    onSendMessage(prompt, null, activeConversation?.subject ?: selectedSubject)
+                                },
+                                modifier = Modifier.weight(1f).fillMaxWidth()
+                            )
+                        } else {
+                            InteractiveChalkboard(
+                                boardType = boardType,
+                                elements = boardElements,
+                                onBoardChanged = onUpdateBoard,
+                                onAskAiExplainBoard = onExplainBoard,
+                                modifier = Modifier.weight(1f).fillMaxWidth()
+                            )
+                        }
+                    }
                 }
             } else {
                 // Phone layout: Clean Mode Switcher (Chat | Chalkboard | Split)
@@ -441,6 +483,8 @@ fun TutorWorkspaceScreen(
                                     )
                                 },
                                 onSwitchToBoard = { workspaceMode = WorkspaceMode.BOARD },
+                                onSwitchTo3D = { workspaceMode = WorkspaceMode.MODEL_3D },
+                                hasScene3D = hasScene3D,
                                 modifier = Modifier.weight(1f).fillMaxWidth()
                             )
                         }
@@ -451,6 +495,18 @@ fun TutorWorkspaceScreen(
                                 onBoardChanged = onUpdateBoard,
                                 onAskAiExplainBoard = { bmp ->
                                     onExplainBoard(bmp)
+                                    workspaceMode = WorkspaceMode.CHAT
+                                },
+                                modifier = Modifier.weight(1f).fillMaxWidth()
+                            )
+                        }
+                        WorkspaceMode.MODEL_3D -> {
+                            Interactive3DModelStudio(
+                                scene3dJson = scene3dJson,
+                                subject = activeConversation?.subject ?: selectedSubject,
+                                onSelectPreset = onUpdateScene3D,
+                                onAskAiBuild3D = { prompt ->
+                                    onSendMessage(prompt, null, activeConversation?.subject ?: selectedSubject)
                                     workspaceMode = WorkspaceMode.CHAT
                                 },
                                 modifier = Modifier.weight(1f).fillMaxWidth()
@@ -509,6 +565,8 @@ fun TutorWorkspaceScreen(
                                 onSpeakMessage = onSpeakMessage,
                                 onSaveToLibrary = {},
                                 onSwitchToBoard = { workspaceMode = WorkspaceMode.BOARD },
+                                onSwitchTo3D = { workspaceMode = WorkspaceMode.MODEL_3D },
+                                hasScene3D = hasScene3D,
                                 modifier = Modifier.weight(0.52f).fillMaxWidth()
                             )
                         }
@@ -792,6 +850,8 @@ private fun ChatPane(
     onSpeakMessage: (String, String) -> Unit,
     onSaveToLibrary: (String) -> Unit,
     onSwitchToBoard: () -> Unit,
+    onSwitchTo3D: () -> Unit,
+    hasScene3D: Boolean,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -819,7 +879,7 @@ private fun ChatPane(
                             Text("Hello! I'm A-Tutor.", style = MaterialTheme.typography.headlineSmall)
                             Spacer(Modifier.height(6.dp))
                             Text(
-                                "Ask any question, upload a photo of your problem, speak into the mic, or ask me to draw equations & diagrams on the chalkboard!",
+                                "Ask any question, upload a photo of your problem, speak into the mic, or ask me to draw 2D diagrams & interactive 3D models!",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -830,7 +890,8 @@ private fun ChatPane(
                             ) {
                                 listOf(
                                     "Draw a parabola y = x^2 - 4 on the board",
-                                    "Explain cellular respiration step by step",
+                                    "Build an interactive 3D Carbon-12 atom model",
+                                    "Build a 3D DNA double helix and explain base pairs",
                                     "How do Newton's 3 laws work?"
                                 ).forEach { sample ->
                                     AssistChip(
@@ -865,11 +926,23 @@ private fun ChatPane(
                             Text(text = msg.text, style = MaterialTheme.typography.bodyMedium)
                             if (msg.hasBoardAction) {
                                 Spacer(Modifier.height(8.dp))
-                                AssistChip(
-                                    onClick = onSwitchToBoard,
-                                    leadingIcon = { Icon(Icons.Default.Brush, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                                    label = { Text("Updated Chalkboard • Tap to View", style = MaterialTheme.typography.labelSmall) }
-                                )
+                                Row(
+                                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    AssistChip(
+                                        onClick = onSwitchToBoard,
+                                        leadingIcon = { Icon(Icons.Default.Brush, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                                        label = { Text("View 2D Board", style = MaterialTheme.typography.labelSmall) }
+                                    )
+                                    if (hasScene3D) {
+                                        AssistChip(
+                                            onClick = onSwitchTo3D,
+                                            leadingIcon = { Icon(Icons.Default.ViewInAr, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                                            label = { Text("Inspect 3D Model", style = MaterialTheme.typography.labelSmall) }
+                                        )
+                                    }
+                                }
                             }
                             if (msg.groundingSources.isNotEmpty()) {
                                 Spacer(Modifier.height(8.dp))
