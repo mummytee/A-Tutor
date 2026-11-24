@@ -57,6 +57,7 @@ import com.example.auth.authStateFlow
 import com.example.auth.signOut
 import com.example.data.BoardType
 import com.example.data.SubjectCatalog
+import com.example.ui.components.UpdatePromptDialog
 import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.FlashcardStudyScreen
@@ -70,6 +71,8 @@ import com.example.ui.screens.SubjectDetailScreen
 import com.example.ui.screens.SubjectsScreen
 import com.example.ui.screens.TutorWorkspaceScreen
 import com.example.ui.theme.ATutorTheme
+import com.example.update.AppUpdateUiState
+import com.example.update.GitHubAppUpdater
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import kotlinx.coroutines.flow.map
@@ -167,6 +170,14 @@ fun ATutorRootApp() {
         context.settingsDataStore.data.map { prefs -> prefs[DARK_THEME_KEY] ?: systemDark }
     }.collectAsStateWithLifecycle(initialValue = systemDark)
 
+    val appUpdater = remember(context) { GitHubAppUpdater(context.applicationContext) }
+    val updateState by appUpdater.state.collectAsStateWithLifecycle()
+    val showUpdateDialog by appUpdater.showDialog.collectAsStateWithLifecycle()
+
+    LaunchedEffect(appUpdater) {
+        appUpdater.checkForUpdates(manual = false)
+    }
+
     val currentUser by remember {
         Firebase.auth.authStateFlow()
     }.collectAsStateWithLifecycle(initialValue = Firebase.auth.currentUser)
@@ -180,6 +191,20 @@ fun ATutorRootApp() {
                 AuthenticatedATutorShell(
                     userId = user.uid,
                     darkThemeEnabled = darkThemeEnabled,
+                    updateState = updateState,
+                    onCheckForUpdates = {
+                        scope.launch {
+                            val current = appUpdater.state.value
+                            if (current is AppUpdateUiState.UpdateAvailable ||
+                                current is AppUpdateUiState.NeedsInstallPermission ||
+                                current is AppUpdateUiState.ReadyToInstall
+                            ) {
+                                appUpdater.reopenDialog()
+                            } else {
+                                appUpdater.checkForUpdates(manual = true)
+                            }
+                        }
+                    },
                     onToggleDarkTheme = { enabled ->
                         scope.launch {
                             context.settingsDataStore.edit { prefs ->
@@ -190,6 +215,26 @@ fun ATutorRootApp() {
                 )
             }
         }
+
+        if (showUpdateDialog) {
+            UpdatePromptDialog(
+                state = updateState,
+                onStartUpdate = { update ->
+                    scope.launch {
+                        appUpdater.downloadAndInstall(update)
+                    }
+                },
+                onRetryInstall = { update, path ->
+                    appUpdater.retryInstallWithCachedApk(update, path)
+                },
+                onOpenInstallPermissionSettings = {
+                    appUpdater.openInstallUnknownAppsSettings()
+                },
+                onDismiss = {
+                    appUpdater.dismissDialog()
+                }
+            )
+        }
     }
 }
 
@@ -197,6 +242,8 @@ fun ATutorRootApp() {
 private fun AuthenticatedATutorShell(
     userId: String,
     darkThemeEnabled: Boolean,
+    updateState: AppUpdateUiState,
+    onCheckForUpdates: () -> Unit,
     onToggleDarkTheme: (Boolean) -> Unit
 ) {
     val viewModel: ATutorViewModel = viewModel(
@@ -556,6 +603,8 @@ private fun AuthenticatedATutorShell(
                         SettingsScreen(
                             profileState = profileState,
                             darkThemeEnabled = darkThemeEnabled,
+                            updateState = updateState,
+                            onCheckForUpdates = onCheckForUpdates,
                             onToggleDarkTheme = onToggleDarkTheme,
                             onSavePreferences = viewModel::savePreferences,
                             onUpdateMemoryNotes = viewModel::updateMemoryNotes,

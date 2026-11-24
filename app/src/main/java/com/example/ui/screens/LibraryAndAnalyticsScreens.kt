@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -77,6 +78,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import com.example.BuildConfig
 import com.example.R
 import com.example.ai.AiTutorService
 import com.example.data.FlashcardDeck
@@ -88,6 +90,7 @@ import com.example.data.TopicProgress
 import com.example.data.UserProfile
 import com.example.export.PdfExporter
 import com.example.ui.UiState
+import com.example.update.AppUpdateUiState
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -462,6 +465,8 @@ fun LibraryAndAnalyticsScreen(
 fun SettingsScreen(
     profileState: UiState<UserProfile?>,
     darkThemeEnabled: Boolean,
+    updateState: AppUpdateUiState,
+    onCheckForUpdates: () -> Unit,
     onToggleDarkTheme: (Boolean) -> Unit,
     onSavePreferences: (String, String, String, Long, String, List<String>) -> Unit,
     onUpdateMemoryNotes: (List<String>) -> Unit,
@@ -608,6 +613,59 @@ fun SettingsScreen(
                                         Icon(Icons.Default.Delete, contentDescription = "Delete memory note", modifier = Modifier.size(18.dp))
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                ElevatedCard(shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.SystemUpdate, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(8.dp))
+                            Text("App Updates", style = MaterialTheme.typography.titleMedium)
+                        }
+                        val statusText = when (updateState) {
+                            AppUpdateUiState.Idle -> "Installed version: v${BuildConfig.VERSION_NAME}"
+                            AppUpdateUiState.Checking -> "Checking GitHub Releases for updates..."
+                            AppUpdateUiState.UpToDate -> "You're up to date (v${BuildConfig.VERSION_NAME})."
+                            is AppUpdateUiState.UpdateAvailable -> "New release ${updateState.update.tagName} is available."
+                            is AppUpdateUiState.Downloading -> "Downloading ${updateState.update.tagName}..."
+                            is AppUpdateUiState.NeedsInstallPermission -> "Install permission needed for ${updateState.update.tagName}."
+                            is AppUpdateUiState.ReadyToInstall -> "Installer ready for ${updateState.update.tagName}."
+                            is AppUpdateUiState.Error -> updateState.message
+                        }
+                        Text(
+                            text = statusText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (updateState is AppUpdateUiState.Error) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                        FilledTonalButton(
+                            onClick = onCheckForUpdates,
+                            enabled = updateState !is AppUpdateUiState.Checking &&
+                                updateState !is AppUpdateUiState.Downloading,
+                            modifier = Modifier.fillMaxWidth().testTag("check_updates_btn")
+                        ) {
+                            if (updateState is AppUpdateUiState.Checking) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("Checking...")
+                            } else if (updateState is AppUpdateUiState.UpdateAvailable ||
+                                updateState is AppUpdateUiState.NeedsInstallPermission ||
+                                updateState is AppUpdateUiState.ReadyToInstall
+                            ) {
+                                Text("Open Update Installer")
+                            } else {
+                                Text("Check for Updates")
                             }
                         }
                     }
