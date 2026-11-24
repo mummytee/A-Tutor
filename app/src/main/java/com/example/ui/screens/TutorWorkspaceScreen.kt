@@ -21,10 +21,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -94,6 +97,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -513,12 +517,14 @@ fun TutorWorkspaceScreen(
                             )
                         }
                         WorkspaceMode.SPLIT -> {
+                            val splitImeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+                            val boardWeight = if (splitImeBottom > 0) 0.34f else 0.48f
                             InteractiveChalkboard(
                                 boardType = boardType,
                                 elements = boardElements,
                                 onBoardChanged = onUpdateBoard,
                                 onAskAiExplainBoard = onExplainBoard,
-                                modifier = Modifier.weight(0.48f).fillMaxWidth()
+                                modifier = Modifier.weight(boardWeight).fillMaxWidth()
                             )
                             HorizontalDivider()
                             ChatPane(
@@ -567,7 +573,7 @@ fun TutorWorkspaceScreen(
                                 onSwitchToBoard = { workspaceMode = WorkspaceMode.BOARD },
                                 onSwitchTo3D = { workspaceMode = WorkspaceMode.MODEL_3D },
                                 hasScene3D = hasScene3D,
-                                modifier = Modifier.weight(0.52f).fillMaxWidth()
+                                modifier = Modifier.weight(1f - boardWeight).fillMaxWidth()
                             )
                         }
                     }
@@ -584,6 +590,7 @@ fun TutorWorkspaceScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .imePadding()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 Row(
@@ -855,7 +862,8 @@ private fun ChatPane(
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
-    LaunchedEffect(messages.size, streamingReply) {
+    val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+    LaunchedEffect(messages.size, streamingReply, imeBottom > 0) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.lastIndex)
         }

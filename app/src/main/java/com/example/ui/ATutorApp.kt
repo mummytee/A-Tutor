@@ -6,8 +6,13 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
@@ -38,6 +43,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
@@ -55,6 +61,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.example.auth.authStateFlow
 import com.example.auth.signOut
+import com.example.data.AppCheckDiagnostics
 import com.example.data.BoardType
 import com.example.data.SubjectCatalog
 import com.example.ui.components.UpdatePromptDialog
@@ -330,14 +337,22 @@ private fun AuthenticatedATutorShell(
         }
     }
 
+    val appCheckDiagnostic by AppCheckDiagnostics.state.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) {
+        AppCheckDiagnostics.verifyToken(forceRefresh = false)
+    }
+
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val useRail = maxWidth >= 820.dp
+        val density = LocalDensity.current
+        val isImeVisible = WindowInsets.ime.getBottom(density) > WindowInsets.navigationBars.getBottom(density)
 
         Scaffold(
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
             bottomBar = {
-                if (isTopLevelRoute && !useRail) {
+                if (isTopLevelRoute && !useRail && !isImeVisible) {
                     NavigationBar {
                         TOP_LEVEL_ITEMS.forEach { item ->
                             val selected = when (item.route) {
@@ -369,6 +384,9 @@ private fun AuthenticatedATutorShell(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
+                    .consumeWindowInsets(innerPadding)
+                    .navigationBarsPadding()
+                    .imePadding()
             ) {
                 if (isTopLevelRoute && useRail) {
                     NavigationRail(modifier = Modifier.fillMaxHeight()) {
@@ -604,6 +622,10 @@ private fun AuthenticatedATutorShell(
                             profileState = profileState,
                             darkThemeEnabled = darkThemeEnabled,
                             updateState = updateState,
+                            appCheckDiagnostic = appCheckDiagnostic,
+                            onVerifyAppCheck = {
+                                scope.launch { AppCheckDiagnostics.verifyToken(forceRefresh = true) }
+                            },
                             onCheckForUpdates = onCheckForUpdates,
                             onToggleDarkTheme = onToggleDarkTheme,
                             onSavePreferences = viewModel::savePreferences,

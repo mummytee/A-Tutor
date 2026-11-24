@@ -13,6 +13,7 @@ import com.example.R
 import com.example.ai.AiTutorService
 import com.example.ai.GeneratedLessonPayload
 import com.example.audio.AudioController
+import com.example.data.AppCheckDiagnostics
 import com.example.data.BoardElement
 import com.example.data.BoardType
 import com.example.data.ChatMessage
@@ -411,7 +412,7 @@ class ATutorViewModel(
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Tutor message failed", e)
-                _tutorError.value = e.localizedMessage ?: "Failed to reach AI Tutor."
+                _tutorError.value = formatAiErrorMessage(e, "Failed to reach AI Tutor.")
             } finally {
                 _streamingReply.value = null
                 _isTutorThinking.value = false
@@ -450,7 +451,7 @@ class ATutorViewModel(
                 throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Chalkboard review failed", e)
-                _tutorError.value = e.localizedMessage ?: "Failed to analyze chalkboard."
+                _tutorError.value = formatAiErrorMessage(e, "Failed to analyze chalkboard.")
             } finally {
                 _isTutorThinking.value = false
             }
@@ -544,7 +545,7 @@ class ATutorViewModel(
                 } catch (fallbackErr: Exception) {
                     Log.e(TAG, "Live Voice session error", fallbackErr)
                     _liveVoiceState.value = LiveVoiceUiState.Error(
-                        fallbackErr.localizedMessage ?: primaryErr.localizedMessage ?: "Unable to connect Live Voice session."
+                        formatAiErrorMessage(fallbackErr, primaryErr.localizedMessage ?: "Unable to connect Live Voice session.")
                     )
                 }
             }
@@ -929,6 +930,16 @@ class ATutorViewModel(
                 started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MILLIS),
                 initialValue = UiState.Loading
             )
+
+    private suspend fun formatAiErrorMessage(error: Exception, fallback: String): String {
+        val raw = error.localizedMessage ?: fallback
+        return if (raw.contains("app check", ignoreCase = true) || raw.contains("403")) {
+            val diag = AppCheckDiagnostics.verifyToken(forceRefresh = true)
+            "$raw (${diag.providerMode}: ${diag.initError ?: diag.tokenCheckSummary})"
+        } else {
+            raw
+        }
+    }
 
     private fun unwrapFirestoreOrThrow(error: Throwable): Throwable {
         val firestoreError = generateSequence(error) { it.cause }

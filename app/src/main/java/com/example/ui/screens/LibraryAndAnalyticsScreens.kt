@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.VerifiedUser
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -81,6 +82,7 @@ import androidx.compose.ui.unit.dp
 import com.example.BuildConfig
 import com.example.R
 import com.example.ai.AiTutorService
+import com.example.data.AppCheckDiagnosticInfo
 import com.example.data.FlashcardDeck
 import com.example.data.QuizRecord
 import com.example.data.ResourceType
@@ -466,6 +468,8 @@ fun SettingsScreen(
     profileState: UiState<UserProfile?>,
     darkThemeEnabled: Boolean,
     updateState: AppUpdateUiState,
+    appCheckDiagnostic: AppCheckDiagnosticInfo,
+    onVerifyAppCheck: () -> Unit,
     onCheckForUpdates: () -> Unit,
     onToggleDarkTheme: (Boolean) -> Unit,
     onSavePreferences: (String, String, String, Long, String, List<String>) -> Unit,
@@ -667,6 +671,39 @@ fun SettingsScreen(
                             } else {
                                 Text("Check for Updates")
                             }
+                        }
+                    }
+                }
+            }
+
+            item {
+                ElevatedCard(shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(8.dp))
+                            Text("AI Attestation (App Check)", style = MaterialTheme.typography.titleMedium)
+                        }
+                        Text(
+                            text = "Provider: ${appCheckDiagnostic.providerMode}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        val detailText = appCheckDiagnostic.initError ?: appCheckDiagnostic.tokenCheckSummary
+                        Text(
+                            text = detailText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (appCheckDiagnostic.initError != null || appCheckDiagnostic.tokenValid == false) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
+                        FilledTonalButton(
+                            onClick = onVerifyAppCheck,
+                            modifier = Modifier.fillMaxWidth().testTag("verify_app_check_btn")
+                        ) {
+                            Text("Re-verify App Check Token")
                         }
                     }
                 }
