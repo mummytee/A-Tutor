@@ -79,6 +79,9 @@ jobs:
             echo "Restored app/google-services.json from embedded project configuration"
           fi
 
+      - name: Run Unit Tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+
       - name: Build Release APK
         id: build_apk
         env:
@@ -88,21 +91,57 @@ jobs:
           KEY_PASSWORD: android
         run: ./gradlew assembleRelease --stacktrace
 
-      - name: Prepare APK Asset
+      - name: Align, Sign & Verify APK Asset
+        id: sign_apk
         run: |
           mkdir -p release-assets
           APK_FILE=$(find app/build/outputs/apk/release/ -name "*.apk" | head -n 1)
-          if [ -n "$APK_FILE" ]; then
-            cp "$APK_FILE" release-assets/A-Tutor.apk
-            echo "Successfully prepared A-Tutor.apk from $APK_FILE"
-          else
+          if [ -z "$APK_FILE" ]; then
             echo "Error: No APK found in app/build/outputs/apk/release/"
             exit 1
           fi
 
+          SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          BUILD_TOOLS=$(ls -d "$SDK_ROOT"/build-tools/* 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$BUILD_TOOLS" ] || ! "$BUILD_TOOLS/zipalign" 2>&1 | grep -q "\-P <pagesize_kb>"; then
+            SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" -name sdkmanager 2>/dev/null | head -n 1)
+            if [ -n "$SDKMANAGER" ]; then
+              yes | "$SDKMANAGER" --install "build-tools;36.0.0" >/dev/null || true
+              BUILD_TOOLS=$(ls -d "$SDK_ROOT"/build-tools/* 2>/dev/null | sort -V | tail -n 1)
+            fi
+          fi
+
+          if [ -z "$BUILD_TOOLS" ] || [ ! -x "$BUILD_TOOLS/zipalign" ] || [ ! -x "$BUILD_TOOLS/apksigner" ]; then
+            echo "Error: Android build-tools (zipalign/apksigner) not found under $SDK_ROOT"
+            exit 1
+          fi
+          echo "Using build-tools: $BUILD_TOOLS"
+
+          "$BUILD_TOOLS/zipalign" -P 16 -f 4 "$APK_FILE" release-assets/A-Tutor-aligned.apk
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks my-upload-key.jks \
+            --ks-key-alias upload \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --min-sdk-version 24 \
+            --v1-signing-enabled false \
+            --v2-signing-enabled true \
+            --v3-signing-enabled true \
+            --out release-assets/A-Tutor.apk \
+            release-assets/A-Tutor-aligned.apk
+          rm -f release-assets/A-Tutor-aligned.apk
+
+          "$BUILD_TOOLS/apksigner" verify \
+            --verbose \
+            --print-certs \
+            --min-sdk-version 24 \
+            -Werr \
+            release-assets/A-Tutor.apk
+          echo "Successfully aligned, signed (v2+v3 only), and verified release-assets/A-Tutor.apk"
+
       - name: Publish Direct APK to GitHub Release
         uses: softprops/action-gh-release@v2
-        if: always() && steps.build_apk.outcome == 'success'
+        if: always() && steps.build_apk.outcome == 'success' && steps.sign_apk.outcome == 'success'
         with:
           tag_name: latest
           name: "A-Tutor Latest Build (A-Tutor.apk)"
