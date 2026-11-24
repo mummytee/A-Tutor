@@ -33,7 +33,7 @@ jobs:
           fi
           chmod +x gradlew
 
-      - name: Restore Permanent Keystore & Upload Signing Key
+      - name: Restore Permanent Keystore
         run: |
           if [ -f debug.keystore.base64 ]; then
             base64 -d debug.keystore.base64 > debug.keystore
@@ -42,18 +42,6 @@ jobs:
           fi
           mkdir -p ~/.android
           cp debug.keystore ~/.android/debug.keystore
-          rm -f my-upload-key.jks
-          keytool -importkeystore \
-            -srckeystore debug.keystore \
-            -srcstorepass android \
-            -srcalias androiddebugkey \
-            -srckeypass android \
-            -destkeystore my-upload-key.jks \
-            -deststoretype PKCS12 \
-            -deststorepass android \
-            -destalias upload \
-            -destkeypass android \
-            -noprompt
 
       - name: Setup Environment Variables
         run: |
@@ -82,28 +70,25 @@ jobs:
       - name: Run Unit Tests
         run: ./gradlew testDebugUnitTest --stacktrace --max-workers=2
 
-      - name: Build Release APK
+      - name: Build Debug APK
         id: build_apk
         env:
           VERSION_CODE: ${{ github.run_number }}
-          KEYSTORE_PATH: ${{ github.workspace }}/my-upload-key.jks
-          STORE_PASSWORD: android
-          KEY_PASSWORD: android
-        run: ./gradlew assembleRelease --stacktrace --max-workers=2
+        run: ./gradlew assembleDebug --stacktrace --max-workers=2
 
       - name: Align, Sign & Verify APK Asset
         id: sign_apk
         run: |
           mkdir -p release-assets
-          APK_FILE=$(find app/build/outputs/apk/release/ -name "*.apk" | head -n 1)
+          APK_FILE=$(find app/build/outputs/apk/debug/ -name "*.apk" | head -n 1)
           if [ -z "$APK_FILE" ]; then
-            echo "Error: No APK found in app/build/outputs/apk/release/"
+            echo "Error: No APK found in app/build/outputs/apk/debug/"
             exit 1
           fi
 
           SDK_ROOT="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
           BUILD_TOOLS=$(ls -d "$SDK_ROOT"/build-tools/* 2>/dev/null | sort -V | tail -n 1)
-          if [ -z "$BUILD_TOOLS" ] || ! "$BUILD_TOOLS/zipalign" 2>&1 | grep -q "\-P <pagesize_kb>"; then
+          if [ -z "$BUILD_TOOLS" ] || ! "$BUILD_TOOLS/zipalign" 2>&1 | grep -Fq -- "-P <pagesize_kb>"; then
             SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" -name sdkmanager 2>/dev/null | head -n 1)
             if [ -n "$SDKMANAGER" ]; then
               yes | "$SDKMANAGER" --install "build-tools;36.0.0" >/dev/null || true
@@ -119,8 +104,8 @@ jobs:
 
           "$BUILD_TOOLS/zipalign" -P 16 -f 4 "$APK_FILE" release-assets/A-Tutor-aligned.apk
           "$BUILD_TOOLS/apksigner" sign \
-            --ks my-upload-key.jks \
-            --ks-key-alias upload \
+            --ks debug.keystore \
+            --ks-key-alias androiddebugkey \
             --ks-pass pass:android \
             --key-pass pass:android \
             --min-sdk-version 24 \
@@ -137,6 +122,7 @@ jobs:
             --min-sdk-version 24 \
             -Werr \
             release-assets/A-Tutor.apk
+          "$BUILD_TOOLS/zipalign" -c -P 16 4 release-assets/A-Tutor.apk
           echo "Successfully aligned, signed (v2+v3 only), and verified release-assets/A-Tutor.apk"
 
       - name: Publish Direct APK to GitHub Release
